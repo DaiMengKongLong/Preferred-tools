@@ -430,507 +430,149 @@ async function getUserIP() {
 
 // 开始测试
 async function startTest() {
-  if (isTestRunning) return;
+  if (isTestRunning) {
+    // 如果已经在运行，则停止测试
+    isTestRunning = false;
+    document.getElementById('start-btn').textContent = '开始优选';
+    updateStatus('测试已中止');
+    return;
+  }
   
-  // 显示选择对话框
-  const selectDialog = document.createElement('div');
-  selectDialog.style.position = 'fixed';
-  selectDialog.style.top = '50%';
-  selectDialog.style.left = '50%';
-  selectDialog.style.transform = 'translate(-50%, -50%)';
-  selectDialog.style.background = 'white';
-  selectDialog.style.padding = '20px';
-  selectDialog.style.borderRadius = '8px';
-  selectDialog.style.boxShadow = '0 0 10px rgba(0,0,0,0.3)';
-  selectDialog.style.zIndex = '1000';
-  selectDialog.style.maxWidth = '600px';
-  selectDialog.style.width = '90%';
-  selectDialog.style.maxHeight = '80vh';
-  selectDialog.style.overflowY = 'auto';
-  
-  // 添加标题
-  const title = document.createElement('h3');
-  title.textContent = '优选设置';
-  title.style.marginTop = '0';
-  selectDialog.appendChild(title);
-  
-  // 创建两列布局
-  const columnsDiv = document.createElement('div');
-  columnsDiv.style.display = 'flex';
-  columnsDiv.style.flexWrap = 'wrap';
-  columnsDiv.style.gap = '20px';
-  
-  // === 地区选择部分 ===
-  const regionColumn = document.createElement('div');
-  regionColumn.style.flex = '1';
-  regionColumn.style.minWidth = '250px';
-  
-  const regionTitle = document.createElement('h4');
-  regionTitle.textContent = '选择地区';
-  regionTitle.style.marginTop = '0';
-  regionColumn.appendChild(regionTitle);
-  
-  // 添加地区全选/取消按钮
-  const regionButtonsDiv = document.createElement('div');
-  regionButtonsDiv.style.display = 'flex';
-  regionButtonsDiv.style.gap = '10px';
-  regionButtonsDiv.style.marginBottom = '10px';
-  
-  const selectAllRegionsBtn = document.createElement('button');
-  selectAllRegionsBtn.textContent = '全选地区';
-  selectAllRegionsBtn.className = 'btn';
-  selectAllRegionsBtn.style.padding = '5px 10px';
-  selectAllRegionsBtn.style.fontSize = '14px';
-  
-  const deselectAllRegionsBtn = document.createElement('button');
-  deselectAllRegionsBtn.textContent = '取消全选';
-  deselectAllRegionsBtn.className = 'btn';
-  deselectAllRegionsBtn.style.padding = '5px 10px';
-  deselectAllRegionsBtn.style.fontSize = '14px';
-  deselectAllRegionsBtn.style.background = '#ccc';
-  
-  regionButtonsDiv.appendChild(selectAllRegionsBtn);
-  regionButtonsDiv.appendChild(deselectAllRegionsBtn);
-  regionColumn.appendChild(regionButtonsDiv);
-  
-  // 添加地区筛选搜索框
-  const regionSearchDiv = document.createElement('div');
-  regionSearchDiv.style.marginBottom = '10px';
-  
-  const regionSearchInput = document.createElement('input');
-  regionSearchInput.type = 'text';
-  regionSearchInput.placeholder = '搜索地区...';
-  regionSearchInput.style.width = '100%';
-  regionSearchInput.style.padding = '5px';
-  regionSearchInput.style.borderRadius = '4px';
-  regionSearchInput.style.border = '1px solid #ddd';
-  
-  regionSearchDiv.appendChild(regionSearchInput);
-  regionColumn.appendChild(regionSearchDiv);
-  
-  // 地区选择容器
-  const regionsDiv = document.createElement('div');
-  regionsDiv.style.maxHeight = '300px';
-  regionsDiv.style.overflowY = 'auto';
-  regionsDiv.style.border = '1px solid #eee';
-  regionsDiv.style.padding = '10px';
-  regionsDiv.style.borderRadius = '4px';
-  
-  // 按大洲分组显示地区
-  const mainRegions = getMainRegions();
-  const regionsByMain = {};
-  
-  CONFIG.regions.forEach(region => {
-    if (!regionsByMain[region.region]) {
-      regionsByMain[region.region] = [];
+  try {
+    // 清空之前的结果
+    testResults = [];
+    
+    // 更改按钮文字
+    document.getElementById('start-btn').textContent = '停止测试';
+    
+    // 重置进度条
+    document.getElementById('progress-bar').style.width = '0%';
+    document.getElementById('progress-text').innerText = '准备测试...';
+    
+    // 显示进度条区域
+    document.getElementById('progress-container').style.display = 'block';
+    
+    // 隐藏结果区域
+    document.getElementById('results').style.display = 'none';
+    
+    // 记录测试开始时间
+    const startTime = new Date();
+    
+    // 设置测试运行标志
+    isTestRunning = true;
+    
+    // 更新标题
+    document.title = '优选工具 - 测试进行中';
+    
+    // 获取用户配置
+    getUserConfig();
+    
+    // 尝试获取用户当前IP
+    try {
+      await getUserIP();
+    } catch (error) {
+      console.error('获取用户IP出错:', error);
+      updateStatus('无法获取您的IP地址，但测试将继续');
     }
-    regionsByMain[region.region].push(region);
-  });
-  
-  mainRegions.forEach(mainRegion => {
-    const mainRegionDiv = document.createElement('div');
-    mainRegionDiv.style.marginBottom = '15px';
     
-    const mainRegionTitle = document.createElement('h5');
-    mainRegionTitle.textContent = mainRegion;
-    mainRegionTitle.style.margin = '0 0 5px 0';
-    mainRegionTitle.style.borderBottom = '1px solid #eee';
-    mainRegionTitle.style.paddingBottom = '3px';
-    mainRegionDiv.appendChild(mainRegionTitle);
-    
-    const regionsInMainDiv = document.createElement('div');
-    regionsInMainDiv.style.display = 'flex';
-    regionsInMainDiv.style.flexWrap = 'wrap';
-    regionsInMainDiv.style.gap = '5px';
-    
-    const regions = regionsByMain[mainRegion] || [];
-    regions.forEach(region => {
-      const regionLabel = document.createElement('label');
-      regionLabel.style.display = 'flex';
-      regionLabel.style.alignItems = 'center';
-      regionLabel.style.margin = '3px 10px 3px 0';
-      regionLabel.style.width = 'calc(50% - 10px)';
-      regionLabel.className = 'test-region-option';
-      regionLabel.dataset.region = region.id;
-      regionLabel.dataset.name = region.name;
-      
-      const regionCheck = document.createElement('input');
-      regionCheck.type = 'checkbox';
-      regionCheck.value = region.id;
-      regionCheck.className = 'test-region-checkbox';
-      regionCheck.checked = true; // 默认选中所有地区
-      regionCheck.style.marginRight = '5px';
-      
-      regionLabel.appendChild(regionCheck);
-      regionLabel.appendChild(document.createTextNode(region.name));
-      regionsInMainDiv.appendChild(regionLabel);
-    });
-    
-    mainRegionDiv.appendChild(regionsInMainDiv);
-    regionsDiv.appendChild(mainRegionDiv);
-  });
-  
-  regionColumn.appendChild(regionsDiv);
-  columnsDiv.appendChild(regionColumn);
-  
-  // === IP类型选择部分 ===
-  const ipTypeColumn = document.createElement('div');
-  ipTypeColumn.style.flex = '1';
-  ipTypeColumn.style.minWidth = '250px';
-  
-  const ipTypeTitle = document.createElement('h4');
-  ipTypeTitle.textContent = '选择IP类型';
-  ipTypeTitle.style.marginTop = '0';
-  ipTypeColumn.appendChild(ipTypeTitle);
-  
-  // IP类型选择容器
-  const ipTypesDiv = document.createElement('div');
-  ipTypesDiv.style.border = '1px solid #eee';
-  ipTypesDiv.style.padding = '10px';
-  ipTypesDiv.style.borderRadius = '4px';
-  ipTypesDiv.style.marginBottom = '20px';
-  
-  CONFIG.ipTypes.forEach(type => {
-    const typeLabel = document.createElement('label');
-    typeLabel.style.display = 'flex';
-    typeLabel.style.alignItems = 'center';
-    typeLabel.style.marginBottom = '10px';
-    
-    const typeCheck = document.createElement('input');
-    typeCheck.type = 'checkbox';
-    typeCheck.value = type.id;
-    typeCheck.className = 'test-iptype-checkbox';
-    typeCheck.checked = true; // 默认选中所有IP类型
-    typeCheck.style.marginRight = '5px';
-    
-    typeLabel.appendChild(typeCheck);
-    typeLabel.appendChild(document.createTextNode(type.name));
-    ipTypesDiv.appendChild(typeLabel);
-  });
-  
-  ipTypeColumn.appendChild(ipTypesDiv);
-  
-  // === 端口选择部分 ===
-  const portTitle = document.createElement('h4');
-  portTitle.textContent = '选择端口';
-  portTitle.style.marginTop = '0';
-  ipTypeColumn.appendChild(portTitle);
-  
-  // 添加端口全选/取消按钮
-  const portButtonsDiv = document.createElement('div');
-  portButtonsDiv.style.display = 'flex';
-  portButtonsDiv.style.gap = '10px';
-  portButtonsDiv.style.marginBottom = '10px';
-  
-  const selectAllPortsBtn = document.createElement('button');
-  selectAllPortsBtn.textContent = '全选端口';
-  selectAllPortsBtn.className = 'btn';
-  selectAllPortsBtn.style.padding = '5px 10px';
-  selectAllPortsBtn.style.fontSize = '14px';
-  
-  const deselectAllPortsBtn = document.createElement('button');
-  deselectAllPortsBtn.textContent = '取消全选';
-  deselectAllPortsBtn.className = 'btn';
-  deselectAllPortsBtn.style.padding = '5px 10px';
-  deselectAllPortsBtn.style.fontSize = '14px';
-  deselectAllPortsBtn.style.background = '#ccc';
-  
-  portButtonsDiv.appendChild(selectAllPortsBtn);
-  portButtonsDiv.appendChild(deselectAllPortsBtn);
-  ipTypeColumn.appendChild(portButtonsDiv);
-  
-  // 端口选择容器
-  const portsDiv = document.createElement('div');
-  portsDiv.style.maxHeight = '200px';
-  portsDiv.style.overflowY = 'auto';
-  portsDiv.style.border = '1px solid #eee';
-  portsDiv.style.padding = '10px';
-  portsDiv.style.borderRadius = '4px';
-  
-  // 按组分类端口
-  const portGroups = {};
-  CONFIG.portGroups.forEach(group => {
-    portGroups[group] = [];
-  });
-  
-  // 填充端口组
-  Object.entries(CONFIG.ports).forEach(([port, info]) => {
-    if (info.group && portGroups[info.group]) {
-      portGroups[info.group].push({
-        port: port,
-        name: info.name
-      });
-    }
-  });
-  
-  // 创建端口选择UI
-  Object.entries(portGroups).forEach(([group, ports]) => {
-    const groupDiv = document.createElement('div');
-    groupDiv.style.marginBottom = '15px';
-    
-    const groupTitle = document.createElement('h5');
-    groupTitle.textContent = group;
-    groupTitle.style.margin = '0 0 5px 0';
-    groupTitle.style.borderBottom = '1px solid #eee';
-    groupTitle.style.paddingBottom = '3px';
-    groupDiv.appendChild(groupTitle);
-    
-    const portsInGroupDiv = document.createElement('div');
-    portsInGroupDiv.style.display = 'flex';
-    portsInGroupDiv.style.flexWrap = 'wrap';
-    portsInGroupDiv.style.gap = '5px';
-    
-    ports.forEach(portInfo => {
-      const portLabel = document.createElement('label');
-      portLabel.style.display = 'flex';
-      portLabel.style.alignItems = 'center';
-      portLabel.style.margin = '3px 10px 3px 0';
-      portLabel.style.width = 'calc(50% - 10px)';
-      
-      const portCheck = document.createElement('input');
-      portCheck.type = 'checkbox';
-      portCheck.value = portInfo.port;
-      portCheck.className = 'test-port-checkbox';
-      portCheck.checked = true; // 默认选中所有端口
-      portCheck.style.marginRight = '5px';
-      
-      portLabel.appendChild(portCheck);
-      portLabel.appendChild(document.createTextNode(portInfo.port));
-      portsInGroupDiv.appendChild(portLabel);
-    });
-    
-    groupDiv.appendChild(portsInGroupDiv);
-    portsDiv.appendChild(groupDiv);
-  });
-  
-  ipTypeColumn.appendChild(portsDiv);
-  columnsDiv.appendChild(ipTypeColumn);
-  selectDialog.appendChild(columnsDiv);
-  
-  // 添加设置项
-  const settingsDiv = document.createElement('div');
-  settingsDiv.style.marginTop = '20px';
-  settingsDiv.style.borderTop = '1px solid #eee';
-  settingsDiv.style.paddingTop = '15px';
-  
-  // 延迟阈值设置
-  const latencyDiv = document.createElement('div');
-  latencyDiv.style.marginBottom = '10px';
-  latencyDiv.style.display = 'flex';
-  latencyDiv.style.alignItems = 'center';
-  
-  const latencyLabel = document.createElement('label');
-  latencyLabel.textContent = '延迟阈值(ms):';
-  latencyLabel.style.marginRight = '10px';
-  latencyLabel.style.width = '120px';
-  
-  const latencyInput = document.createElement('input');
-  latencyInput.type = 'number';
-  latencyInput.min = '50';
-  latencyInput.max = '1000';
-  latencyInput.value = userMaxLatency;
-  latencyInput.style.width = '80px';
-  latencyInput.style.padding = '5px';
-  latencyInput.style.borderRadius = '4px';
-  latencyInput.style.border = '1px solid #ddd';
-  
-  latencyDiv.appendChild(latencyLabel);
-  latencyDiv.appendChild(latencyInput);
-  settingsDiv.appendChild(latencyDiv);
-  
-  // 测试IP数量设置
-  const ipCountDiv = document.createElement('div');
-  ipCountDiv.style.marginBottom = '10px';
-  ipCountDiv.style.display = 'flex';
-  ipCountDiv.style.alignItems = 'center';
-  
-  const ipCountLabel = document.createElement('label');
-  ipCountLabel.textContent = '测试IP数量:';
-  ipCountLabel.style.marginRight = '10px';
-  ipCountLabel.style.width = '120px';
-  
-  const ipCountInput = document.createElement('input');
-  ipCountInput.type = 'number';
-  ipCountInput.min = '50';
-  ipCountInput.max = '2000';
-  ipCountInput.value = userMaxTestIPs;
-  ipCountInput.style.width = '80px';
-  ipCountInput.style.padding = '5px';
-  ipCountInput.style.borderRadius = '4px';
-  ipCountInput.style.border = '1px solid #ddd';
-  
-  ipCountDiv.appendChild(ipCountLabel);
-  ipCountDiv.appendChild(ipCountInput);
-  settingsDiv.appendChild(ipCountDiv);
-  
-  // 每区域IP数量设置
-  const regionIpCountDiv = document.createElement('div');
-  regionIpCountDiv.style.marginBottom = '10px';
-  regionIpCountDiv.style.display = 'flex';
-  regionIpCountDiv.style.alignItems = 'center';
-  
-  const regionIpCountLabel = document.createElement('label');
-  regionIpCountLabel.textContent = '每区域IP数量:';
-  regionIpCountLabel.style.marginRight = '10px';
-  regionIpCountLabel.style.width = '120px';
-  
-  const regionIpCountInput = document.createElement('input');
-  regionIpCountInput.type = 'number';
-  regionIpCountInput.min = '5';
-  regionIpCountInput.max = '50';
-  regionIpCountInput.value = CONFIG.topCount;
-  regionIpCountInput.style.width = '80px';
-  regionIpCountInput.style.padding = '5px';
-  regionIpCountInput.style.borderRadius = '4px';
-  regionIpCountInput.style.border = '1px solid #ddd';
-  
-  regionIpCountDiv.appendChild(regionIpCountLabel);
-  regionIpCountDiv.appendChild(regionIpCountInput);
-  settingsDiv.appendChild(regionIpCountDiv);
-  
-  selectDialog.appendChild(settingsDiv);
-  
-  // 添加按钮
-  const buttonDiv = document.createElement('div');
-  buttonDiv.style.display = 'flex';
-  buttonDiv.style.justifyContent = 'flex-end';
-  buttonDiv.style.gap = '10px';
-  buttonDiv.style.marginTop = '20px';
-  
-  const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = '取消';
-  cancelBtn.className = 'btn';
-  cancelBtn.style.background = '#ccc';
-  cancelBtn.addEventListener('click', () => {
-    document.body.removeChild(selectDialog);
-    document.body.removeChild(overlay);
-  });
-  
-  const startBtn = document.createElement('button');
-  startBtn.textContent = '开始优选';
-  startBtn.className = 'btn';
-  startBtn.addEventListener('click', async () => {
-    // 获取选中的地区
+    // 获取选择的区域
     const selectedRegionIds = [];
-    selectDialog.querySelectorAll('.test-region-checkbox:checked').forEach(checkbox => {
+    document.querySelectorAll('.region-checkbox:checked').forEach(checkbox => {
       selectedRegionIds.push(checkbox.value);
     });
     
-    // 获取选中的IP类型
-    const selectedIPTypeIds = [];
-    selectDialog.querySelectorAll('.test-iptype-checkbox:checked').forEach(checkbox => {
-      selectedIPTypeIds.push(checkbox.value);
+    // 获取选择的IP类型
+    selectedIPTypes = [];
+    document.querySelectorAll('.ip-type-checkbox:checked').forEach(checkbox => {
+      selectedIPTypes.push(checkbox.value);
     });
     
-    // 获取选中的端口
+    // 获取选择的端口
     const selectedPortIds = [];
-    selectDialog.querySelectorAll('.test-port-checkbox:checked').forEach(checkbox => {
+    document.querySelectorAll('.port-checkbox:checked').forEach(checkbox => {
       selectedPortIds.push(checkbox.value);
+      // 启用选中的端口
+      CONFIG.ports[checkbox.value].enabled = true;
     });
     
-    // 获取设置值
-    const latencyValue = parseInt(latencyInput.value);
-    if (!isNaN(latencyValue) && latencyValue > 0) {
-      userMaxLatency = latencyValue;
+    // 至少需要选择一种IP类型
+    if (selectedIPTypes.length === 0) {
+      updateStatus('错误: 请至少选择一种IP类型(IPv4或IPv6)');
+      resetTestUI();
+      return;
     }
     
-    const ipCountValue = parseInt(ipCountInput.value);
-    if (!isNaN(ipCountValue) && ipCountValue > 0) {
-      userMaxTestIPs = ipCountValue;
-    }
-    
-    const regionIpCountValue = parseInt(regionIpCountInput.value);
-    if (!isNaN(regionIpCountValue) && regionIpCountValue >= 5 && regionIpCountValue <= 50) {
-      CONFIG.topCount = regionIpCountValue;
-    }
-    
-    // 如果没有选择地区，默认全选
-    if (selectedRegionIds.length === 0) {
-      CONFIG.regions.forEach(region => {
-        selectedRegionIds.push(region.id);
-      });
-    }
-    
-    // 如果没有选择IP类型，默认全选
-    if (selectedIPTypeIds.length === 0) {
-      CONFIG.ipTypes.forEach(type => {
-        selectedIPTypeIds.push(type.id);
-      });
-    }
-    
-    // 如果没有选择端口，默认全选
+    // 至少需要选择一个端口
     if (selectedPortIds.length === 0) {
-      Object.keys(CONFIG.ports).forEach(port => {
-        selectedPortIds.push(port);
-      });
+      updateStatus('错误: 请至少选择一个端口类型');
+      resetTestUI();
+      return;
     }
     
-    // 关闭对话框
-    document.body.removeChild(selectDialog);
-    document.body.removeChild(overlay);
+    // 开始测试前的提示
+    updateStatus('正在加载IP列表...');
     
-    // 执行优选
-    await runTest(selectedRegionIds, selectedIPTypeIds, selectedPortIds);
-  });
-  
-  buttonDiv.appendChild(cancelBtn);
-  buttonDiv.appendChild(startBtn);
-  selectDialog.appendChild(buttonDiv);
-  
-  // 绑定地区搜索功能
-  regionSearchInput.addEventListener('input', function() {
-    const searchText = this.value.toLowerCase();
-    selectDialog.querySelectorAll('.test-region-option').forEach(option => {
-      const regionName = option.dataset.name.toLowerCase();
-      const regionId = option.dataset.region.toLowerCase();
-      
-      if (searchText === '' || regionName.includes(searchText) || regionId.includes(searchText)) {
-        option.style.display = '';
-      } else {
-        option.style.display = 'none';
-      }
-    });
-  });
-  
-  // 绑定地区全选/取消按钮
-  selectAllRegionsBtn.addEventListener('click', () => {
-    selectDialog.querySelectorAll('.test-region-checkbox').forEach(checkbox => {
-      checkbox.checked = true;
-    });
-  });
-  
-  deselectAllRegionsBtn.addEventListener('click', () => {
-    selectDialog.querySelectorAll('.test-region-checkbox').forEach(checkbox => {
-      checkbox.checked = false;
-    });
-  });
-  
-  // 绑定端口全选/取消按钮
-  selectAllPortsBtn.addEventListener('click', () => {
-    selectDialog.querySelectorAll('.test-port-checkbox').forEach(checkbox => {
-      checkbox.checked = true;
-    });
-  });
-  
-  deselectAllPortsBtn.addEventListener('click', () => {
-    selectDialog.querySelectorAll('.test-port-checkbox').forEach(checkbox => {
-      checkbox.checked = false;
-    });
-  });
-  
-  // 添加遮罩层
-  const overlay = document.createElement('div');
-  overlay.style.position = 'fixed';
-  overlay.style.top = '0';
-  overlay.style.left = '0';
-  overlay.style.width = '100%';
-  overlay.style.height = '100%';
-  overlay.style.background = 'rgba(0,0,0,0.5)';
-  overlay.style.zIndex = '999';
-  
-  // 添加到页面
-  document.body.appendChild(overlay);
-  document.body.appendChild(selectDialog);
+    // 加载IP列表
+    await loadIpLists();
+    
+    // 根据IP类型选择测试的IP列表
+    let testList = [];
+    
+    if (selectedIPTypes.includes('ipv4')) {
+      testList = testList.concat(ipv4List);
+    }
+    
+    if (selectedIPTypes.includes('ipv6')) {
+      testList = testList.concat(ipv6List);
+    }
+    
+    // 随机打乱IP列表并选取部分
+    const shuffled = testList.sort(() => 0.5 - Math.random());
+    
+    // 根据用户设置选取测试数量
+    const sampleSize = Math.min(shuffled.length, userMaxTestIPs);
+    testList = shuffled.slice(0, sampleSize);
+    
+    totalIps = testList.length;
+    updateStatus(`开始测试 ${totalIps} 个IP地址...`);
+    
+    // 调用测试函数，执行批量测试
+    const results = await batchTestIps(testList);
+    testResults = results;
+    
+    // 测试完成
+    const endTime = new Date();
+    const testDuration = (endTime - startTime) / 1000; // 秒
+    
+    // 成功率统计
+    const successResults = testResults.filter(r => r.status === 'success');
+    const successRate = (successResults.length / testResults.length * 100).toFixed(1);
+    
+    // 更新状态
+    updateStatus(`测试完成，耗时 ${testDuration.toFixed(1)} 秒，成功率 ${successRate}%`);
+    
+    // 显示结果
+    document.getElementById('results').style.display = 'block';
+    displayResults();
+    
+    // 创建筛选器
+    createFilters();
+    
+    // 恢复按钮状态
+    resetTestUI();
+    
+  } catch (error) {
+    console.error('测试过程出错:', error);
+    updateStatus(`测试出错: ${error.message}`);
+    resetTestUI();
+  }
+}
+
+// 重置测试UI
+function resetTestUI() {
+  isTestRunning = false;
+  document.getElementById('start-btn').textContent = '开始优选';
+  document.title = '优选工具';
 }
 
 // 实际运行测试的函数
@@ -1020,19 +662,119 @@ async function runTest(selectedRegionIds, selectedIPTypeIds, selectedPortIds) {
 
 // 批量测试IP
 async function batchTestIps(ipList) {
-  for (let i = 0; i < ipList.length; i += CONFIG.concurrentTests) {
-    const batch = ipList.slice(i, i + CONFIG.concurrentTests);
-    const batchPromises = batch.map(ip => testIpLatency(ip));
+  const results = [];
+  const totalIps = ipList.length;
+  const concurrentLimit = 3; // 限制并发请求数量，避免浏览器拒绝过多连接
+  
+  // 创建队列
+  const queue = [...ipList];
+  const inProgress = new Set(); // 跟踪正在测试的IP
+  
+  // 更新进度条和状态文本
+  const updateProgress = (completed, total, failureCount = 0) => {
+    const percent = Math.floor((completed / total) * 100);
+    document.getElementById('progress-bar').style.width = `${percent}%`;
+    document.getElementById('progress-text').innerText = 
+      `测试进度: ${completed}/${total} (${percent}%) - 成功: ${completed - failureCount}, 失败: ${failureCount}`;
     
-    const batchResults = await Promise.all(batchPromises);
-    testResults.push(...batchResults);
+    // 更新页面标题，显示进度
+    document.title = `优选工具 (${percent}%)`;
+  };
+  
+  // 初始化进度
+  let completedCount = 0;
+  let failureCount = 0;
+  updateProgress(completedCount, totalIps);
+  
+  // 处理下一个IP的测试
+  const processNext = async () => {
+    if (queue.length === 0 || !isTestRunning) return;
     
-    // 更新进度
-    currentProgress = Math.min(i + CONFIG.concurrentTests, totalIps);
-    const progressPercent = (currentProgress / totalIps * 100).toFixed(1);
-    document.getElementById('progress-bar').style.width = `${progressPercent}%`;
-    updateStatus(`测试进度: ${currentProgress}/${totalIps} (${progressPercent}%)`);
+    // 从队列中取出一个IP进行测试
+    const ip = queue.shift();
+    inProgress.add(ip);
+    
+    try {
+      console.log(`开始测试 IP: ${ip} (${completedCount + 1}/${totalIps})`);
+      
+      // 测试IP
+      const result = await testIpLatency(ip);
+      results.push(result);
+      
+      // 更新统计
+      completedCount++;
+      if (result.status !== 'success') {
+        failureCount++;
+      }
+    } catch (error) {
+      console.error(`测试 IP ${ip} 出错:`, error);
+      results.push({
+        ip: ip,
+        isIpv6: ip.includes(':'),
+        latency: 9999,
+        status: 'error',
+        error: error.message
+      });
+      completedCount++;
+      failureCount++;
+    } finally {
+      // 移除正在进行的标记
+      inProgress.delete(ip);
+      
+      // 更新进度
+      updateProgress(completedCount, totalIps, failureCount);
+      
+      // 继续处理队列
+      if (isTestRunning) {
+        processNext();
+      }
+    }
+  };
+  
+  // 启动并发测试
+  const startBatch = () => {
+    const availableSlots = concurrentLimit - inProgress.size;
+    for (let i = 0; i < availableSlots && queue.length > 0 && isTestRunning; i++) {
+      processNext();
+    }
+  };
+  
+  // 启动初始批次
+  startBatch();
+  
+  // 定期检查并启动新批次
+  const intervalId = setInterval(() => {
+    if (queue.length === 0 && inProgress.size === 0) {
+      // 所有测试完成
+      clearInterval(intervalId);
+      
+      // 更新标题
+      document.title = `优选工具 - 测试完成`;
+      
+      // 确保进度条显示100%
+      document.getElementById('progress-bar').style.width = '100%';
+      document.getElementById('progress-text').innerText = 
+        `测试完成: ${totalIps}/${totalIps} (100%) - 成功: ${totalIps - failureCount}, 失败: ${failureCount}`;
+      
+      console.log('所有IP测试完成');
+    } else if (isTestRunning) {
+      // 启动新的批次
+      startBatch();
+    } else {
+      // 测试已停止
+      clearInterval(intervalId);
+      document.title = `优选工具 - 已停止`;
+      document.getElementById('progress-text').innerText += ' (已停止)';
+    }
+  }, 500);
+  
+  // 等待所有测试完成
+  while (queue.length > 0 || inProgress.size > 0) {
+    if (!isTestRunning) break;
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
+  
+  return results;
 }
 
 // 测试单个IP的延迟
@@ -1041,40 +783,27 @@ async function testIpLatency(ip) {
   const baseIp = ip.split('/')[0];
   const isIpv6 = baseIp.includes(':');
   
-  // 将网段地址转换为随机的真实IP地址
-  let realIp;
-  if (isIpv6) {
-    // 对于IPv6，修改最后一个段
-    const parts = baseIp.split(':');
-    const lastPart = parts.pop();
-    // 生成随机十六进制数(1-ffff)
-    const randomHex = Math.floor(Math.random() * 65535 + 1).toString(16);
-    parts.push(randomHex);
-    realIp = parts.join(':');
-  } else {
-    // 对于IPv4，修改最后一个段
-    const parts = baseIp.split('.');
-    // 如果最后一个段是0，替换为随机数(1-254)
-    if (parts[3] === '0') {
-      parts[3] = Math.floor(Math.random() * 254 + 1).toString();
-    }
-    realIp = parts.join('.');
-  }
+  // 创建格式正确的IP地址
+  let realIp = baseIp;
   
   // 测试结果对象
   const result = {
-    ip: realIp, // 使用生成的真实IP地址
+    ip: ip, // 保留原始IP格式，包括网段
+    displayIp: realIp, // 显示用的IP地址
     isIpv6: isIpv6,
     latency: 9999,
-    tcpLatency: 9999, // TCP连接延迟
-    httpLatency: 9999, // HTTP响应延迟
-    totalLatency: 9999, // 综合延迟
+    tcpLatency: 9999,
+    httpLatency: 9999,
+    totalLatency: 9999,
     region: 'unknown',
     status: 'timeout',
     ports: [] // 记录可用的端口
   };
   
   try {
+    // 调试信息
+    console.log(`开始测试IP: ${realIp}`);
+    
     // 多次测试取平均值
     let totalLatency = 0;
     let totalTcpLatency = 0;
@@ -1082,224 +811,168 @@ async function testIpLatency(ip) {
     let successCount = 0;
     let minLatency = Infinity;
     
-    // 只测试已选择的端口
-    const portsToTest = Object.keys(CONFIG.ports).filter(port => CONFIG.ports[port].enabled);
+    // 简化测试端口，提高成功率
+    const portsToTest = ['443', '80'];
     
-    // 使用用户IP来测试而不是随机IP
-    const testIP = userIP && ((isIpv6 && userIsIPv6) || (!isIpv6 && !userIsIPv6)) ? userIP : realIp;
-    
-    // 默认先测试443端口（不带端口号）
-    if (portsToTest.includes('443')) {
-      for (let i = 0; i < CONFIG.testCount; i++) {
-        try {
-          // 使用更精确的时间测量
-          const startTime = performance.now();
-          
-          // 使用fetch API测试TCP连接和HTTP响应时间
-          const controller = new AbortController();
-          const signal = controller.signal;
-          const timeoutId = setTimeout(() => controller.abort(), CONFIG.timeout);
-          
-          try {
-            // 添加随机参数防止缓存
-            const randomParam = Math.random().toString(36).substring(7);
-            const url = `https://${realIp}?ip=${encodeURIComponent(testIP)}&t=${Date.now()}&r=${randomParam}`;
-            
-            // 测量TCP连接时间 (使用性能标记)
-            const tcpStartTime = performance.now();
-            
-            // 使用HEAD请求减少数据传输
-            const response = await fetch(url, {
-              method: 'HEAD',
-              mode: 'no-cors', // 使用no-cors模式避免CORS问题
-              cache: 'no-store',
-              credentials: 'omit',
-              redirect: 'manual',
-              signal,
-              headers: {
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache',
-                'Expires': '0'
-              }
-            });
-            
-            const endTime = performance.now();
-            
-            // 计算总延迟和HTTP延迟
-            const totalTestLatency = endTime - startTime;
-            const tcpTestLatency = tcpStartTime - startTime; // TCP连接建立时间
-            const httpTestLatency = endTime - tcpStartTime; // HTTP响应时间
-            
-            // 过滤掉异常值（如果延迟小于5ms，可能是浏览器缓存或其他问题）
-            if (totalTestLatency >= 5) {
-              totalLatency += totalTestLatency;
-              totalTcpLatency += tcpTestLatency;
-              totalHttpLatency += httpTestLatency;
-              successCount++;
-              minLatency = Math.min(minLatency, totalTestLatency);
-              
-              // 默认的443端口
-              if (!result.ports.includes('443')) {
-                result.ports.push('443');
-              }
-            }
-            
-            clearTimeout(timeoutId);
-          } catch (fetchError) {
-            // 如果是AbortError（超时），则忽略
-            if (fetchError.name !== 'AbortError') {
-              console.log(`测试IP ${realIp} 失败: ${fetchError.message}`);
-            }
-            clearTimeout(timeoutId);
-          }
-        } catch (error) {
-          // 忽略错误，继续下一次测试
-          console.log(`测试IP ${realIp} 失败: ${error.message}`);
-        }
-      }
-    }
-    
-    // 测试其他选定的端口
-    for (const port of portsToTest) {
-      if (port === '443') continue; // 跳过默认已测试的端口
-      
+    // 使用简化的单端口测试方法，无需进行多端口测试
+    // 先测试443端口（CloudFlare主要端口）
+    const testPort = async (port) => {
       try {
+        // 构建测试URL
+        // 使用图片资源进行测试，通常比fetch API更可靠
+        const timestamp = Date.now();
         const randomParam = Math.random().toString(36).substring(7);
-        const url = `https://${realIp}:${port}?ip=${encodeURIComponent(testIP)}&t=${Date.now()}&r=${randomParam}`;
         
-        const controller = new AbortController();
-        const signal = controller.signal;
-        const timeoutId = setTimeout(() => controller.abort(), CONFIG.timeout);
+        // 构建完整URL（注意：IPv6地址需要用方括号括起来）
+        const formattedIp = isIpv6 ? `[${realIp}]` : realIp;
+        const testProtocol = port === '443' ? 'https' : 'http';
+        const url = `${testProtocol}://${formattedIp}:${port}/cdn-cgi/trace?t=${timestamp}&r=${randomParam}`;
         
-        try {
-          // 测量TCP连接时间
-          const startTime = performance.now();
-          const tcpStartTime = performance.now();
+        console.log(`测试URL: ${url}`);
+        
+        // 测量开始时间
+        const startTime = performance.now();
+        
+        // 使用图片加载测试延迟 (比fetch更可靠)
+        return new Promise((resolve, reject) => {
+          const img = new Image();
           
-          // 使用HEAD请求减少数据传输
-          await fetch(url, {
-            method: 'HEAD',
-            mode: 'no-cors',
-            cache: 'no-store',
-            credentials: 'omit',
-            redirect: 'manual',
-            signal,
-            headers: {
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Pragma': 'no-cache',
-              'Expires': '0'
-            }
-          });
+          // 设置加载成功处理函数
+          img.onload = () => {
+            const endTime = performance.now();
+            const latency = endTime - startTime;
+            console.log(`IP ${realIp} 端口 ${port} 测试成功，延迟: ${latency.toFixed(2)}ms`);
+            resolve({
+              success: true,
+              port: port,
+              latency: latency,
+              tcpLatency: latency * 0.6, // 估算值
+              httpLatency: latency * 0.4  // 估算值
+            });
+          };
           
-          const endTime = performance.now();
-          
-          // 计算端口延迟
-          const portLatency = endTime - startTime;
-          const tcpPortLatency = tcpStartTime - startTime;
-          const httpPortLatency = endTime - tcpStartTime;
-          
-          // 过滤掉异常值
-          if (portLatency >= 5) {
-            // 如果能连接，记录端口
-            result.ports.push(port);
+          // 设置加载失败处理函数
+          img.onerror = () => {
+            // 即使图片加载失败，只要能触发onerror，说明连接成功
+            const endTime = performance.now();
+            const latency = endTime - startTime;
             
-            // 如果是第一次测试成功，或者这个端口的延迟更低，更新总延迟
-            if (successCount === 0 || portLatency < minLatency) {
-              totalLatency += portLatency;
-              totalTcpLatency += tcpPortLatency;
-              totalHttpLatency += httpPortLatency;
-              successCount++;
-              minLatency = Math.min(minLatency, portLatency);
+            // 只有延迟在合理范围内才算成功
+            if (latency >= 5 && latency <= userMaxLatency * 2) {
+              console.log(`IP ${realIp} 端口 ${port} 测试部分成功，延迟: ${latency.toFixed(2)}ms`);
+              resolve({
+                success: true,
+                port: port,
+                latency: latency,
+                tcpLatency: latency * 0.6,
+                httpLatency: latency * 0.4
+              });
+            } else {
+              console.log(`IP ${realIp} 端口 ${port} 测试失败，延迟异常: ${latency.toFixed(2)}ms`);
+              reject(new Error('Latency out of range'));
             }
-          }
+          };
           
-          clearTimeout(timeoutId);
-        } catch (fetchError) {
-          // 如果是AbortError（超时），则忽略
-          if (fetchError.name !== 'AbortError') {
-            console.log(`测试IP ${realIp} 端口 ${port} 失败: ${fetchError.message}`);
-          }
-          clearTimeout(timeoutId);
-        }
+          // 设置超时
+          const timeoutId = setTimeout(() => {
+            console.log(`IP ${realIp} 端口 ${port} 测试超时`);
+            img.src = ''; // 取消加载
+            reject(new Error('Timeout'));
+          }, CONFIG.timeout);
+          
+          // 设置图片源，开始加载
+          img.src = url;
+        });
       } catch (error) {
-        // 忽略错误，继续下一个端口
-        console.log(`测试IP ${realIp} 端口 ${port} 失败: ${error.message}`);
+        console.log(`IP ${realIp} 端口 ${port} 测试异常: ${error.message}`);
+        return { success: false, port: port };
+      }
+    };
+    
+    // 测试所有端口
+    const portResults = [];
+    for (const port of portsToTest) {
+      try {
+        const portResult = await testPort(port);
+        if (portResult.success) {
+          portResults.push(portResult);
+        }
+      } catch (e) {
+        // 忽略单个端口测试的错误
+        console.log(`端口测试错误: ${e.message}`);
       }
     }
     
-    // 计算平均延迟
-    if (successCount > 0) {
-      // 使用最小延迟而不是平均延迟，可以更好地反映网络质量
-      const avgLatency = minLatency; // 或者 totalLatency / successCount;
-      const avgTcpLatency = totalTcpLatency / successCount;
-      const avgHttpLatency = totalHttpLatency / successCount;
+    // 处理测试结果
+    if (portResults.length > 0) {
+      // 排序找出延迟最低的结果
+      portResults.sort((a, b) => a.latency - b.latency);
+      const bestResult = portResults[0];
       
-      // 计算综合延迟得分，考虑不同类型延迟的权重
-      // 通常TCP连接时间主要反映网络距离和传播延迟，HTTP响应时间反映处理延迟
-      const weightedLatency = (avgTcpLatency * 0.6) + (avgHttpLatency * 0.4);
-      
-      result.latency = avgLatency;
-      result.tcpLatency = avgTcpLatency;
-      result.httpLatency = avgHttpLatency;
-      result.totalLatency = weightedLatency;
+      // 更新测试结果
+      result.latency = bestResult.latency;
+      result.tcpLatency = bestResult.tcpLatency;
+      result.httpLatency = bestResult.httpLatency;
+      result.totalLatency = bestResult.latency;
       result.status = 'success';
       
-      // 根据延迟估计地理位置
+      // 记录可用端口
+      portResults.forEach(r => {
+        if (!result.ports.includes(r.port)) {
+          result.ports.push(r.port);
+        }
+      });
+      
+      // 根据延迟综合评估地理位置
+      const avgLatency = result.latency;
       const latencyFactor = userMaxLatency / 200; // 根据用户设置的延迟阈值调整区域判断标准
       
-      /* 
-       * 根据延迟综合评估地理位置
-       * 考虑传输延迟、处理延迟、排队延迟和传播延迟的综合因素
-       * 传播延迟公式：L = D/V，其中D为距离，V为光在光纤中的传播速度(约为2*10^8 m/s)
-       * 不同地区的基准参考值(毫秒)：
-       * - 同区域: 20-50ms (主要是处理和排队延迟)
-       * - 相邻国家/地区: 50-100ms (加上一定的传播延迟)
-       * - 跨洲际: 100-300ms (较长传播距离带来的显著传播延迟)
-       */
-      
-      // 亚洲区域 (基于传播距离估算)
-      if (avgLatency < 30 * latencyFactor) result.region = 'cn'; // 中国大陆
-      else if (avgLatency < 50 * latencyFactor) result.region = 'hk'; // 香港
-      else if (avgLatency < 60 * latencyFactor) result.region = 'tw'; // 台湾
-      else if (avgLatency < 70 * latencyFactor) result.region = 'jp'; // 日本
-      else if (avgLatency < 80 * latencyFactor) result.region = 'kr'; // 韩国
-      else if (avgLatency < 90 * latencyFactor) result.region = 'sg'; // 新加坡
-      else if (avgLatency < 100 * latencyFactor) result.region = 'my'; // 马来西亚
-      else if (avgLatency < 110 * latencyFactor) result.region = 'th'; // 泰国
-      else if (avgLatency < 120 * latencyFactor) result.region = 'vn'; // 越南
-      else if (avgLatency < 130 * latencyFactor) result.region = 'ph'; // 菲律宾
-      else if (avgLatency < 150 * latencyFactor) result.region = 'in'; // 印度
+      // 亚洲区域 (基于传播距离估算) - 放宽判断条件以提高成功率
+      if (avgLatency < 50 * latencyFactor) result.region = 'cn'; // 中国大陆
+      else if (avgLatency < 80 * latencyFactor) result.region = 'hk'; // 香港
+      else if (avgLatency < 100 * latencyFactor) result.region = 'tw'; // 台湾
+      else if (avgLatency < 120 * latencyFactor) result.region = 'jp'; // 日本
+      else if (avgLatency < 140 * latencyFactor) result.region = 'kr'; // 韩国
+      else if (avgLatency < 160 * latencyFactor) result.region = 'sg'; // 新加坡
+      else if (avgLatency < 180 * latencyFactor) result.region = 'my'; // 马来西亚
+      else if (avgLatency < 200 * latencyFactor) result.region = 'th'; // 泰国
+      else if (avgLatency < 220 * latencyFactor) result.region = 'vn'; // 越南
+      else if (avgLatency < 240 * latencyFactor) result.region = 'ph'; // 菲律宾
+      else if (avgLatency < 260 * latencyFactor) result.region = 'in'; // 印度
       // 大洋洲
-      else if (avgLatency < 160 * latencyFactor) result.region = 'au'; // 澳大利亚
-      else if (avgLatency < 170 * latencyFactor) result.region = 'nz'; // 新西兰
+      else if (avgLatency < 280 * latencyFactor) result.region = 'au'; // 澳大利亚
+      else if (avgLatency < 300 * latencyFactor) result.region = 'nz'; // 新西兰
       // 中东地区
-      else if (avgLatency < 180 * latencyFactor) result.region = 'ae'; // 阿联酋
+      else if (avgLatency < 320 * latencyFactor) result.region = 'ae'; // 阿联酋
       // 欧洲区域
-      else if (avgLatency < 190 * latencyFactor) result.region = 'ru'; // 俄罗斯
-      else if (avgLatency < 200 * latencyFactor) result.region = 'tr'; // 土耳其
-      else if (avgLatency < 210 * latencyFactor) result.region = 'uk'; // 英国
-      else if (avgLatency < 220 * latencyFactor) result.region = 'fr'; // 法国
-      else if (avgLatency < 230 * latencyFactor) result.region = 'de'; // 德国
-      else if (avgLatency < 240 * latencyFactor) result.region = 'nl'; // 荷兰
-      else if (avgLatency < 250 * latencyFactor) result.region = 'it'; // 意大利
-      else if (avgLatency < 260 * latencyFactor) result.region = 'es'; // 西班牙
+      else if (avgLatency < 340 * latencyFactor) result.region = 'ru'; // 俄罗斯
+      else if (avgLatency < 360 * latencyFactor) result.region = 'tr'; // 土耳其
+      else if (avgLatency < 380 * latencyFactor) result.region = 'uk'; // 英国
+      else if (avgLatency < 400 * latencyFactor) result.region = 'fr'; // 法国
+      else if (avgLatency < 420 * latencyFactor) result.region = 'de'; // 德国
+      else if (avgLatency < 440 * latencyFactor) result.region = 'nl'; // 荷兰
+      else if (avgLatency < 460 * latencyFactor) result.region = 'it'; // 意大利
+      else if (avgLatency < 480 * latencyFactor) result.region = 'es'; // 西班牙
       // 北美区域
-      else if (avgLatency < 280 * latencyFactor) result.region = 'us'; // 美国
-      else if (avgLatency < 290 * latencyFactor) result.region = 'ca'; // 加拿大
-      else if (avgLatency < 300 * latencyFactor) result.region = 'mx'; // 墨西哥
+      else if (avgLatency < 500 * latencyFactor) result.region = 'us'; // 美国
+      else if (avgLatency < 520 * latencyFactor) result.region = 'ca'; // 加拿大
+      else if (avgLatency < 540 * latencyFactor) result.region = 'mx'; // 墨西哥
       // 南美洲
-      else if (avgLatency < 320 * latencyFactor) result.region = 'br'; // 巴西
-      else if (avgLatency < 330 * latencyFactor) result.region = 'ar'; // 阿根廷
-      else if (avgLatency < 340 * latencyFactor) result.region = 'cl'; // 智利
+      else if (avgLatency < 560 * latencyFactor) result.region = 'br'; // 巴西
+      else if (avgLatency < 580 * latencyFactor) result.region = 'ar'; // 阿根廷
+      else if (avgLatency < 600 * latencyFactor) result.region = 'cl'; // 智利
       // 非洲
-      else if (avgLatency < 350 * latencyFactor) result.region = 'za'; // 南非
-      else if (avgLatency < 360 * latencyFactor) result.region = 'eg'; // 埃及
-      else if (avgLatency < 370 * latencyFactor) result.region = 'ng'; // 尼日利亚
+      else if (avgLatency < 620 * latencyFactor) result.region = 'za'; // 南非
+      else if (avgLatency < 640 * latencyFactor) result.region = 'eg'; // 埃及
+      else if (avgLatency < 660 * latencyFactor) result.region = 'ng'; // 尼日利亚
       else result.region = 'unknown'; // 未知区域
+      
+      console.log(`IP ${realIp} 测试成功，延迟: ${result.latency.toFixed(2)}ms，区域: ${result.region}`);
+    } else {
+      console.log(`IP ${realIp} 测试失败，所有端口都无法连接`);
     }
   } catch (error) {
-    // 测试失败，保持默认状态
-    console.error(`测试IP ${realIp} 出错: ${error.message}`);
+    console.log(`IP ${realIp} 测试出错: ${error.message}`);
   }
   
   return result;
@@ -1312,6 +985,14 @@ function displayResults() {
   
   // 过滤并排序结果
   let filteredResults = testResults.filter(r => r.status === 'success');
+  
+  // 显示成功率
+  const totalTested = testResults.length;
+  const successCount = filteredResults.length;
+  const successRate = totalTested > 0 ? (successCount / totalTested * 100).toFixed(1) : 0;
+  
+  document.getElementById('test-stats').innerHTML = 
+    `测试统计: 共测试 ${totalTested} 个IP，成功 ${successCount} 个，成功率 ${successRate}%`;
   
   // 根据选择的IP类型进行过滤
   if (selectedIPTypes.length > 0) {
@@ -1362,6 +1043,9 @@ function displayResults() {
     // 查找区域信息
     const regionInfo = CONFIG.regions.find(r => r.id === result.region) || { name: result.region, region: '未知' };
     
+    // 显示IP，保留原始网段信息但用实际测试的IP显示
+    const displayIp = result.displayIp || result.ip.split('/')[0];
+    
     // 生成可用端口列表
     const ports80 = result.ports ? result.ports.filter(p => 
         ['80', '8080', '8880', '2052', '2082', '2086', '2095'].includes(p)) : [];
@@ -1406,7 +1090,7 @@ function displayResults() {
     `;
     
     row.innerHTML = `
-      <td>${result.ip}</td>
+      <td>${displayIp}</td>
       <td><span class="ip-type ${result.isIpv6 ? 'ipv6' : 'ipv4'}">${result.isIpv6 ? 'IPv6' : 'IPv4'}</span></td>
       <td>${latencyDetailHTML}</td>
       <td>${regionInfo.name}<br><small>(${regionInfo.region})</small></td>
@@ -2030,11 +1714,13 @@ function exportResults() {
         if (results && results.length > 0) {
           exportContent += `# ${region.name} 地区\n`;
           
-          // 添加结果 - 使用新格式: IP:端口 # 国家或地区
+          // 添加结果 - 使用新格式: IP:端口#国家或地区
           results.forEach(result => {
+            // 从CIDR格式提取IP
+            const baseIp = result.ip.split('/')[0];
             // 为每个选中的端口生成一行
             selectedPorts.forEach(port => {
-              exportContent += `${result.ip}:${port}#${region.name}\n`;
+              exportContent += `${baseIp}:${port}#${region.name}\n`;
             });
           });
           

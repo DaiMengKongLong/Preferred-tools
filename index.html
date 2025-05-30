@@ -316,6 +316,24 @@
       line-height: 1.4;
     }
     
+    /* 测试统计信息 */
+    .results-header {
+      margin-top: 30px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    
+    .test-stats {
+      margin: 10px 0;
+      padding: 8px 12px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      font-size: 14px;
+      color: #444;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      display: inline-block;
+    }
+    
     /* 过滤容器3D效果 */
     .filter-container {
       margin-bottom: 20px;
@@ -683,9 +701,22 @@
         <div class="progress-text" id="progress-text">准备就绪</div>
       </div>
       
+      <div class="results-header">
+        <h3>测试结果 (<span id="result-count">0</span>)</h3>
+        <div id="test-stats" class="test-stats"></div>
+        <div class="filter-container">
+          <div class="filter-group">
+            <label>区域筛选:</label>
+            <div id="region-filter" class="filter-options"></div>
+          </div>
+          <div class="filter-group">
+            <label>IP类型:</label>
+            <div id="ip-type-filter" class="filter-options"></div>
+          </div>
+        </div>
+      </div>
+      
       <div class="results" id="results">
-        <h2>优选结果 (<span id="result-count">0</span>)</h2>
-        
         <div id="filters" class="filter-container">
           <!-- 筛选器将通过JS添加 -->
         </div>

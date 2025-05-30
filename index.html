@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🦭呆萌恐龙🦭优选工具</title>
+  <meta name="description" content="优选CloudFlare CDN的IP地址，获取最佳网络体验，由呆萌恐龙提供">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>">
+  <style>
+    /* 基础样式 */
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f0f2f5; }
+    
+    /* 3D立体效果容器 */
+    .container { 
+      max-width: 800px; 
+      margin: 0 auto; 
+      background: white; 
+      padding: 20px; 
+      border-radius: 12px; 
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1), 
+                  0 1px 8px rgba(0,0,0,0.07),
+                  0 20px 30px rgba(255,255,255,0.6) inset; 
+      transform: translateZ(0);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    /* 标题3D效果 */
+    h1 { 
+      text-align: center; 
+      color: #333; 
+      text-shadow: 1px 1px 0 #fff, 2px 2px 0 rgba(0,0,0,0.1);
+      position: relative;
+    }
+    
+    .description { 
+      text-align: center; 
+      color: #666; 
+      margin-bottom: 20px; 
+    }
+    
+    /* 控制区域3D效果 */
+    .controls { 
+      display: flex; 
+      justify-content: center; 
+      gap: 10px; 
+      margin-bottom: 20px; 
+      align-items: center; 
+      flex-wrap: wrap; 
+    }
+    
+    /* 按钮3D效果 */
+    .btn { 
+      padding: 10px 20px; 
+      background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%); 
+      color: #333; 
+      border: none; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      font-size: 16px; 
+      font-weight: 600;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1),
+                  0 1px 3px rgba(0,0,0,0.08),
+                  0 1px 0 rgba(255,255,255,0.7) inset;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 7px 14px rgba(0,0,0,0.12),
+                  0 3px 6px rgba(0,0,0,0.08),
+                  0 1px 0 rgba(255,255,255,0.7) inset;
+    }
+    
+    .btn:active {
+      transform: translateY(1px);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1),
+                  0 1px 2px rgba(0,0,0,0.08),
+                  0 1px 0 rgba(255,255,255,0.7) inset;
+    }
+    
+    .btn:before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, 
+                  rgba(255,255,255,0) 0%, 
+                  rgba(255,255,255,0.3) 50%, 
+                  rgba(255,255,255,0) 100%);
+      transition: all 0.6s ease;
+    }
+    
+    .btn:hover:before {
+      left: 100%;
+    }
+    
+    .btn:disabled { 
+      background: linear-gradient(135deg, #e0e0e0 0%, #d0d0d0 100%); 
+      cursor: not-allowed; 
+      box-shadow: none;
+      transform: none;
+    }
+    
+    /* 设置区域3D效果 */
+    .settings { 
+      display: flex; 
+      flex-wrap: wrap; 
+      justify-content: center; 
+      margin-top: 10px; 
+      width: 100%; 
+    }
+    
+    .setting-item { 
+      display: flex; 
+      align-items: center; 
+      margin: 5px 10px; 
+      background: white;
+      padding: 8px 12px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05),
+                  0 1px 2px rgba(0,0,0,0.04);
+    }
+    
+    .setting-item label { 
+      margin-right: 8px; 
+      white-space: nowrap; 
+      font-weight: 500;
+      color: #444;
+    }
+    
+    .setting-item input { 
+      width: 80px; 
+      padding: 6px; 
+      border: 1px solid #e0e0e0; 
+      border-radius: 6px; 
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+      transition: all 0.2s ease;
+    }
+    
+    .setting-item input:focus {
+      outline: none;
+      border-color: #a0c8ff;
+      box-shadow: 0 0 0 3px rgba(66,133,244,0.15), 
+                  inset 0 1px 3px rgba(0,0,0,0.05);
+    }
+    
+    /* 进度条3D效果 */
+    .progress-container { 
+      height: 30px; 
+      background: #f5f5f5; 
+      border-radius: 8px; 
+      margin-bottom: 20px; 
+      position: relative; 
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    
+    .progress-bar { 
+      height: 100%; 
+      width: 0; 
+      background: linear-gradient(135deg, #4285f4 0%, #34a853 100%); 
+      border-radius: 8px; 
+      transition: width 0.3s; 
+      box-shadow: 0 1px 0 rgba(255,255,255,0.3) inset;
+    }
+    
+    .progress-text { 
+      position: absolute; 
+      top: 0; 
+      left: 0; 
+      right: 0; 
+      text-align: center; 
+      line-height: 30px; 
+      color: #333; 
+      font-weight: 500;
+      text-shadow: 0 1px 0 rgba(255,255,255,0.5);
+      z-index: 1;
+    }
+    
+    /* 结果区域3D效果 */
+    .results { 
+      display: none; 
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.05),
+                  0 1px 5px rgba(0,0,0,0.03);
+      padding: 15px;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    /* 标签按钮3D效果 */
+    .tab-btn { 
+      padding: 8px 15px; 
+      background: linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%); 
+      border: none; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      font-weight: 500;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.06),
+                  0 1px 2px rgba(0,0,0,0.04);
+      transition: all 0.2s ease;
+    }
+    
+    .tab-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.08),
+                  0 2px 4px rgba(0,0,0,0.06);
+    }
+    
+    .tab-btn.active { 
+      background: linear-gradient(135deg, #4285f4 0%, #5c9aff 100%); 
+      color: white; 
+      box-shadow: 0 2px 5px rgba(66,133,244,0.3),
+                  0 1px 2px rgba(66,133,244,0.2);
+    }
+    
+    /* 表格3D效果 */
+    table { 
+      width: 100%; 
+      border-collapse: separate; 
+      border-spacing: 0;
+      margin-top: 10px;
+    }
+    
+    th, td { 
+      padding: 12px; 
+      text-align: left; 
+      border-bottom: 1px solid #f0f0f0; 
+    }
+    
+    th { 
+      background: linear-gradient(135deg, #f8f9fa 0%, #f0f2f5 100%); 
+      font-weight: 600;
+      color: #444;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: 0 1px 0 #e0e0e0;
+    }
+    
+    tr {
+      transition: all 0.2s ease;
+    }
+    
+    tr:hover {
+      background-color: #f9f9f9;
+      transform: translateZ(5px);
+      box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+    }
+    
+    /* 质量指示器3D效果 */
+    .excellent { 
+      background: linear-gradient(135deg, #e8f5e9 0%, #d7eeda 100%); 
+    }
+    
+    .good { 
+      background: linear-gradient(135deg, #f0f4c3 0%, #e6ebb4 100%); 
+    }
+    
+    .average { 
+      background: linear-gradient(135deg, #fff8e1 0%, #ffefcc 100%); 
+    }
+    
+    .poor { 
+      background: linear-gradient(135deg, #ffebee 0%, #ffdde0 100%); 
+    }
+    
+    /* IP类型标签3D效果 */
+    .ip-type {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: bold;
+      text-align: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08),
+                  0 1px 0 rgba(255,255,255,0.5) inset;
+      position: relative;
+      transform: translateZ(0);
+    }
+    
+    .ipv4 {
+      background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+      color: #1565c0;
+      border: 1px solid rgba(187,222,251,0.5);
+    }
+    
+    .ipv6 {
+      background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+      color: #2e7d32;
+      border: 1px solid rgba(200,230,201,0.5);
+    }
+    
+    /* 过滤容器3D效果 */
+    .filter-container {
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+      padding: 18px;
+      border-radius: 12px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.05),
+                  0 1px 5px rgba(0,0,0,0.03);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    /* 过滤部分3D效果 */
+    .filter-section {
+      margin-bottom: 15px;
+      position: relative;
+    }
+    
+    .filter-section h3 {
+      margin-top: 0;
+      margin-bottom: 12px;
+      font-size: 16px;
+      color: #333;
+      text-shadow: 0 1px 0 #fff;
+      position: relative;
+    }
+    
+    .filter-section h3:after {
+      content: '';
+      position: absolute;
+      bottom: -4px;
+      left: 0;
+      width: 40px;
+      height: 2px;
+      background: linear-gradient(90deg, #4285f4, transparent);
+    }
+    
+    /* 过滤组3D效果 */
+    .filter-groups {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      max-height: 300px;
+      overflow-y: auto;
+      padding-right: 10px;
+      scrollbar-width: thin;
+      scrollbar-color: #ccc #f5f5f5;
+    }
+    
+    .filter-groups::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    .filter-groups::-webkit-scrollbar-track {
+      background: #f5f5f5;
+      border-radius: 10px;
+    }
+    
+    .filter-groups::-webkit-scrollbar-thumb {
+      background: #ccc;
+      border-radius: 10px;
+    }
+    
+    .filter-group {
+      flex: 1;
+      min-width: 200px;
+      background: white;
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04),
+                  0 1px 3px rgba(0,0,0,0.02);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .filter-group h4 {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      color: #444;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 8px;
+      position: sticky;
+      top: 0;
+      background: white;
+      z-index: 1;
+      text-shadow: 0 1px 0 #fff;
+    }
+    
+    /* 选项按钮3D效果 */
+    .select-btn {
+      padding: 6px 12px;
+      font-size: 14px;
+      background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%);
+      color: #333;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.06),
+                  0 1px 2px rgba(0,0,0,0.04);
+      transition: all 0.2s ease;
+    }
+    
+    .select-btn:hover {
+      background: linear-gradient(135deg, #f0f0f0 0%, #e5e5e5 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 3px 6px rgba(0,0,0,0.08),
+                  0 1px 3px rgba(0,0,0,0.06);
+    }
+    
+    .select-btn:active {
+      transform: translateY(1px);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    
+    /* 页脚3D效果 */
+    .footer {
+      margin-top: 30px;
+      text-align: center;
+      font-size: 14px;
+      color: #666;
+      padding: 15px;
+      background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05),
+                  0 1px 3px rgba(0,0,0,0.02);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    /* 指导说明3D效果 */
+    .instructions {
+      background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+      padding: 18px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      line-height: 1.5;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.05),
+                  0 1px 5px rgba(0,0,0,0.03);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .instructions h3 {
+      margin-top: 0;
+      margin-bottom: 12px;
+      color: #333;
+      text-shadow: 0 1px 0 #fff;
+      position: relative;
+    }
+    
+    .instructions h3:after {
+      content: '';
+      position: absolute;
+      bottom: -4px;
+      left: 0;
+      width: 40px;
+      height: 2px;
+      background: linear-gradient(90deg, #4285f4, transparent);
+    }
+    
+    /* 上传部分3D效果 */
+    .upload-section {
+      background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+      padding: 18px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.05),
+                  0 1px 5px rgba(0,0,0,0.03);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .upload-btn {
+      padding: 10px 20px;
+      background: linear-gradient(135deg, #4285f4 0%, #5c9aff 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-top: 10px;
+      box-shadow: 0 4px 6px rgba(66,133,244,0.3),
+                  0 1px 3px rgba(66,133,244,0.2),
+                  0 1px 0 rgba(255,255,255,0.1) inset;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .upload-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 7px 14px rgba(66,133,244,0.4),
+                  0 3px 6px rgba(66,133,244,0.3),
+                  0 1px 0 rgba(255,255,255,0.1) inset;
+    }
+    
+    .upload-btn:before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, 
+                  rgba(255,255,255,0) 0%, 
+                  rgba(255,255,255,0.3) 50%, 
+                  rgba(255,255,255,0) 100%);
+      transition: all 0.6s ease;
+    }
+    
+    .upload-btn:hover:before {
+      left: 100%;
+    }
+    
+    /* 文件输入3D效果 */
+    .file-input {
+      margin-bottom: 10px;
+      position: relative;
+    }
+    
+    /* 标签页3D效果 */
+    .tabs {
+      display: flex;
+      margin-bottom: 20px;
+      justify-content: center;
+      position: relative;
+      z-index: 1;
+    }
+    
+    .tab {
+      padding: 10px 20px;
+      background: linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%);
+      cursor: pointer;
+      font-weight: 500;
+      border-radius: 8px;
+      margin: 0 5px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.06),
+                  0 1px 2px rgba(0,0,0,0.04);
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .tab:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.08),
+                  0 2px 4px rgba(0,0,0,0.06);
+    }
+    
+    .tab.active {
+      background: linear-gradient(135deg, #4285f4 0%, #5c9aff 100%);
+      color: white;
+      box-shadow: 0 2px 5px rgba(66,133,244,0.3),
+                  0 1px 2px rgba(66,133,244,0.2);
+    }
+    
+    /* 添加一些全局3D效果 */
+    .container:before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 70%);
+      pointer-events: none;
+      z-index: -1;
+    }
+    
+    /* 添加一些动画效果 */
+    @keyframes float {
+      0% {
+        transform: translateY(0px);
+      }
+      50% {
+        transform: translateY(-5px);
+      }
+      100% {
+        transform: translateY(0px);
+      }
+    }
+    
+    .container {
+      animation: float 6s ease-in-out infinite;
+    }
+    
+    /* 适配移动设备 */
+    @media (max-width: 768px) {
+      .container {
+        padding: 15px;
+        margin: 10px;
+      }
+      
+      .controls {
+        flex-direction: column;
+      }
+      
+      .btn {
+        width: 100%;
+        margin-bottom: 10px;
+      }
+      
+      .filter-group {
+        min-width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🦭呆萌恐龙🦭优选工具</h1>
+    <p class="description">优选CloudFlare CDN的IP地址，获取最佳网络体验</p>
+    
+    <!-- 标签页导航 -->
+    <div class="tabs">
+      <div class="tab active" data-tab="test">优选IP</div>
+      <div class="tab" data-tab="upload">导入优选IP</div>
+    </div>
+    
+    <!-- 优选IP标签页 -->
+    <div id="test-tab" class="tab-content active">
+      <div class="controls">
+        <button id="start-test" class="btn">开始优选</button>
+        <button id="export-results" class="btn" disabled>导出结果</button>
+        <div class="settings">
+          <div class="setting-item">
+            <label for="max-latency">延迟阈值(ms):</label>
+            <input type="number" id="max-latency" min="50" max="1000" value="200" placeholder="默认200ms">
+          </div>
+          <div class="setting-item">
+            <label for="max-ip-count">测试IP数量:</label>
+            <input type="number" id="max-ip-count" min="50" max="2000" value="500" placeholder="默认500个">
+          </div>
+          <label class="auto-test-checkbox">
+            <input type="checkbox" id="auto-test">
+            <span>页面加载后自动开始优选</span>
+          </label>
+        </div>
+      </div>
+      
+      <div class="instructions">
+        <h3>使用说明</h3>
+        <ul>
+          <li>点击"开始优选"按钮开始优选IP地址</li>
+          <li>优选过程可能需要几分钟，请耐心等待</li>
+          <li>优选完成后，可以使用筛选器选择查看不同国家/地区和IP类型</li>
+          <li>可以选择需要测试的端口类型（80系和443系）</li>
+          <li>每个国家/地区默认会优选出10个最佳IP地址，可自定义数量</li>
+          <li>结果将按照延迟从低到高排序显示</li>
+          <li>可以使用搜索框快速查找特定国家/地区</li>
+          <li>可以按大洲筛选查看特定区域的优选结果</li>
+          <li>点击"导出结果"可将优选IP保存为文本文件，包含端口信息</li>
+          <li>优选IP可用于自定义加速服务配置</li>
+          <li>延迟阈值默认为200ms，可根据需要自行调整</li>
+          <li>支持多选国家/地区和IP类型，可同时查看多个国家的优选结果</li>
+        </ul>
+      </div>
+      
+      <div class="progress-container">
+        <div class="progress-bar" id="progress-bar"></div>
+        <div class="progress-text" id="progress-text">准备就绪</div>
+      </div>
+      
+      <div class="results" id="results">
+        <h2>优选结果 (<span id="result-count">0</span>)</h2>
+        
+        <div id="filters" class="filter-container">
+          <!-- 筛选器将通过JS添加 -->
+        </div>
+        
+        <div class="result-content" id="result-content">
+          <table id="result-table">
+            <thead>
+              <tr>
+                <th>IP地址</th>
+                <th>IP类型</th>
+                <th>延迟(ms)</th>
+                <th>区域</th>
+                <th>可用端口</th>
+              </tr>
+            </thead>
+            <tbody id="result-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 导入优选IP标签页 -->
+    <div id="upload-tab" class="tab-content">
+      <div class="upload-section">
+        <h3>导入优选IP文件</h3>
+        <p>您可以导入之前导出的优选IP文件，或者其他来源的优选IP文件。文件格式应包含按地区分类的IP地址，例如：</p>
+        <pre>
+# HK 地区
+104.16.25.4 # 80系: 80,8080, 443系: 443,2053
+104.16.124.96 # 80系: 80, 443系: 443,8443
+
+# JP 地区
+104.16.175.31 # 443系: 443,2053,8443
+        </pre>
+        
+        <form id="uploadForm" class="upload-form">
+          <div class="file-input">
+            <input type="file" id="ipFile" name="ipFile" accept=".txt">
+          </div>
+          <button type="submit" class="upload-btn">导入并解析</button>
+        </form>
+        
+        <div id="uploadStatus" class="upload-status"></div>
+        <div id="uploadResults"></div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="footer">
+    <p>呆萌恐龙优选工具 &copy; 2025</p>
+  </div>
+  
+  <!-- 内联IP列表数据 -->
+  <script>
+    // 内联IPv4和IPv6列表，避免网络请求
+    const INLINE_IPV4_LIST = [
+      "104.16.0.0/24", "104.16.1.0/24", "104.16.2.0/24", "104.16.3.0/24", "104.16.4.0/24",
+      "104.16.5.0/24", "104.16.6.0/24", "104.16.7.0/24", "104.16.8.0/24", "104.16.9.0/24",
+      "104.16.10.0/24", "104.16.11.0/24", "104.16.12.0/24", "104.16.13.0/24", "104.16.14.0/24",
+      "104.16.15.0/24", "104.16.16.0/24", "104.16.17.0/24", "104.16.18.0/24", "104.16.19.0/24",
+      "104.16.20.0/24", "104.16.21.0/24", "104.16.22.0/24", "104.16.23.0/24", "104.16.24.0/24",
+      "104.16.25.0/24", "104.16.26.0/24", "104.16.27.0/24", "104.16.28.0/24", "104.16.29.0/24",
+      "104.16.30.0/24", "104.16.31.0/24", "104.16.32.0/24", "104.16.33.0/24", "104.16.34.0/24",
+      "104.16.35.0/24", "104.16.36.0/24", "104.16.37.0/24", "104.16.38.0/24", "104.16.39.0/24",
+      "104.16.40.0/24", "104.16.41.0/24", "104.16.42.0/24", "104.16.43.0/24", "104.16.44.0/24",
+      "104.16.45.0/24", "104.16.46.0/24", "104.16.47.0/24", "104.16.48.0/24", "104.16.49.0/24",
+      "104.16.50.0/24", "104.16.51.0/24", "104.16.52.0/24", "104.16.53.0/24", "104.16.54.0/24",
+      "104.16.55.0/24", "104.16.56.0/24", "104.16.57.0/24", "104.16.58.0/24", "104.16.59.0/24",
+      "104.16.60.0/24", "104.16.61.0/24", "104.16.62.0/24", "104.16.63.0/24", "104.16.64.0/24",
+      "104.16.65.0/24", "104.16.66.0/24", "104.16.67.0/24", "104.16.68.0/24", "104.16.69.0/24",
+      "104.16.70.0/24", "104.16.71.0/24", "104.16.72.0/24", "104.16.73.0/24", "104.16.74.0/24",
+      "104.16.75.0/24", "104.16.76.0/24", "104.16.77.0/24", "104.16.78.0/24", "104.16.79.0/24",
+      "104.16.80.0/24", "104.16.81.0/24", "104.16.82.0/24", "104.16.83.0/24", "104.16.84.0/24",
+      "104.16.85.0/24", "104.16.86.0/24", "104.16.87.0/24", "104.16.88.0/24", "104.16.89.0/24",
+      "104.16.90.0/24", "104.16.91.0/24", "104.16.92.0/24", "104.16.93.0/24", "104.16.94.0/24",
+      "104.16.95.0/24", "104.16.96.0/24", "104.16.97.0/24", "104.16.98.0/24", "104.16.99.0/24",
+      "104.16.100.0/24", "104.16.101.0/24", "104.16.102.0/24", "104.16.103.0/24", "104.16.104.0/24"
+    ];
+    
+    const INLINE_IPV6_LIST = [
+      "2606:4700:10::6816:0/112", "2606:4700:10::6816:100/112", "2606:4700:10::6816:200/112",
+      "2606:4700:10::6816:300/112", "2606:4700:10::6816:400/112", "2606:4700:10::6816:500/112",
+      "2606:4700:10::6816:600/112", "2606:4700:10::6816:700/112", "2606:4700:10::6816:800/112",
+      "2606:4700:10::6816:900/112", "2606:4700:10::6816:a00/112", "2606:4700:10::6816:b00/112",
+      "2606:4700:10::6816:c00/112", "2606:4700:10::6816:d00/112", "2606:4700:10::6816:e00/112",
+      "2606:4700:10::6816:f00/112", "2606:4700:10::6816:1000/112", "2606:4700:10::6816:1100/112",
+      "2606:4700:10::6816:1200/112", "2606:4700:10::6816:1300/112", "2606:4700:10::6816:1400/112"
+    ];
+  </script>
+  
+  <!-- 引入测速脚本 -->
+  <script src="js/ip-test-browser.js"></script>
+  
+  <!-- 添加额外的自定义功能 -->
+  <script>
+    // 在页面加载完成后添加使用说明和上传功能
+    document.addEventListener('DOMContentLoaded', () => {
+      // 使用内联IP列表，而不是从文件加载
+      if (typeof ipv4List !== 'undefined') {
+        ipv4List = INLINE_IPV4_LIST;
+      }
+      
+      if (typeof ipv6List !== 'undefined') {
+        ipv6List = INLINE_IPV6_LIST;
+      }
+      
+      // 绑定标签切换事件
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+          
+          tab.classList.add('active');
+          document.getElementById(tab.dataset.tab + '-tab').classList.add('active');
+        });
+      });
+      
+      // 绑定文件导入事件
+      document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const fileInput = document.getElementById('ipFile');
+        const uploadStatus = document.getElementById('uploadStatus');
+        const uploadResults = document.getElementById('uploadResults');
+        
+        if (!fileInput.files || fileInput.files.length === 0) {
+          uploadStatus.innerHTML = '请选择文件';
+          uploadStatus.className = 'upload-status error';
+          return;
+        }
+        
+        const file = fileInput.files[0];
+        
+        // 读取文件内容
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const content = event.target.result;
+          
+          // 解析优选IP文件
+          try {
+            uploadStatus.innerHTML = '正在处理文件...';
+            uploadStatus.className = 'upload-status';
+            
+            // 解析文件内容
+            const lines = content.split('\n').filter(line => line.trim() !== '');
+            const optimizedIPs = {};
+            
+            // 初始化所有区域
+            if (typeof CONFIG !== 'undefined' && CONFIG.regions) {
+              CONFIG.regions.forEach(region => {
+                optimizedIPs[region.id] = [];
+              });
+            } else {
+              // 备用初始化
+              ['hk', 'jp', 'sg', 'us', 'tw', 'kr', 'de', 'uk', 'fr', 'ca', 'au', 'br'].forEach(id => {
+                optimizedIPs[id] = [];
+              });
+            }
+            
+            let currentRegion = null;
+            
+            // 解析文件内容
+            for (const line of lines) {
+              // 检查是否是地区标记行
+              if (line.startsWith('#')) {
+                const lowerLine = line.toLowerCase();
+                if (lowerLine.includes('hk') || lowerLine.includes('香港')) {
+                  currentRegion = 'hk';
+                } else if (lowerLine.includes('jp') || lowerLine.includes('日本')) {
+                  currentRegion = 'jp';
+                } else if (lowerLine.includes('us') || lowerLine.includes('美国')) {
+                  currentRegion = 'us';
+                } else if (lowerLine.includes('sg') || lowerLine.includes('新加坡')) {
+                  currentRegion = 'sg';
+                } else if (lowerLine.includes('tw') || lowerLine.includes('台湾')) {
+                  currentRegion = 'tw';
+                } else if (lowerLine.includes('kr') || lowerLine.includes('韩国')) {
+                  currentRegion = 'kr';
+                } else if (lowerLine.includes('de') || lowerLine.includes('德国')) {
+                  currentRegion = 'de';
+                } else if (lowerLine.includes('uk') || lowerLine.includes('英国')) {
+                  currentRegion = 'uk';
+                } else if (lowerLine.includes('fr') || lowerLine.includes('法国')) {
+                  currentRegion = 'fr';
+                } else if (lowerLine.includes('ca') || lowerLine.includes('加拿大')) {
+                  currentRegion = 'ca';
+                } else if (lowerLine.includes('au') || lowerLine.includes('澳大利亚')) {
+                  currentRegion = 'au';
+                } else if (lowerLine.includes('br') || lowerLine.includes('巴西')) {
+                  currentRegion = 'br';
+                } else if (lowerLine.includes('asia') || lowerLine.includes('亚洲')) {
+                  currentRegion = 'hk'; // 默认使用香港作为亚洲区域
+                } else if (lowerLine.includes('europe') || lowerLine.includes('欧洲')) {
+                  currentRegion = 'de'; // 默认使用德国作为欧洲区域
+                } else if (lowerLine.includes('america') || lowerLine.includes('美洲')) {
+                  currentRegion = 'us'; // 默认使用美国作为美洲区域
+                } else {
+                  // 尝试匹配任何区域名称
+                  for (const region of CONFIG.regions) {
+                    if (lowerLine.includes(region.id) || lowerLine.includes(region.name.toLowerCase())) {
+                      currentRegion = region.id;
+                      break;
+                    }
+                  }
+                }
+              } 
+              // 如果是IP行，提取IP地址
+              else if (currentRegion && optimizedIPs[currentRegion]) {
+                // 支持新的格式：IP:端口 # 国家或地区
+                // 或者旧格式：IP # 端口信息
+                const ipMatch = line.match(/^([0-9a-fA-F.:]+)(?::\d+)?/);
+                if (ipMatch && ipMatch[1]) {
+                  const ip = ipMatch[1].trim();
+                  // 确保IP不重复
+                  if (!optimizedIPs[currentRegion].includes(ip)) {
+                    optimizedIPs[currentRegion].push(ip);
+                  }
+                }
+              }
+            }
+            
+            // 确保每个区域至少有一个IP
+            const defaultIP = "104.16.25.4";
+            for (const region in optimizedIPs) {
+              if (optimizedIPs[region].length === 0) {
+                optimizedIPs[region].push(defaultIP);
+              }
+            }
+            
+            // 显示解析结果
+            let html = '<h3>解析结果</h3>';
+            
+            // 按地区分组显示
+            let regions;
+            if (typeof CONFIG !== 'undefined' && CONFIG.regions) {
+              regions = {};
+              CONFIG.regions.forEach(region => {
+                regions[region.id] = region.name;
+              });
+            } else {
+              // 备用区域映射
+              regions = {
+                'hk': '香港',
+                'jp': '日本',
+                'us': '美国',
+                'sg': '新加坡',
+                'tw': '台湾',
+                'kr': '韩国',
+                'de': '德国',
+                'uk': '英国',
+                'fr': '法国',
+                'ca': '加拿大',
+                'au': '澳大利亚'
+              };
+            }
+            
+            // 按大区分组显示
+            const regionsByArea = {};
+            if (typeof CONFIG !== 'undefined' && CONFIG.regions) {
+              CONFIG.regions.forEach(region => {
+                if (!regionsByArea[region.region]) {
+                  regionsByArea[region.region] = [];
+                }
+                regionsByArea[region.region].push(region.id);
+              });
+            } else {
+              // 备用分组
+              regionsByArea['亚洲'] = ['hk', 'jp', 'sg', 'tw', 'kr'];
+              regionsByArea['北美'] = ['us', 'ca'];
+              regionsByArea['欧洲'] = ['uk', 'de', 'fr'];
+              regionsByArea['大洋洲'] = ['au'];
+            }
+            
+            // 按大区显示结果
+            for (const [areaName, regionIds] of Object.entries(regionsByArea)) {
+              html += `<h4>${areaName}</h4>`;
+              
+              for (const regionId of regionIds) {
+                if (optimizedIPs[regionId] && optimizedIPs[regionId].length > 0) {
+                  html += `<div class="region">
+                    <h5>${regions[regionId] || regionId} 优选IP</h5>
+                    <ul>`;
+                  
+                  optimizedIPs[regionId].forEach(ip => {
+                    html += `<li>${ip}</li>`;
+                  });
+                  
+                  html += `</ul></div>`;
+                }
+              }
+            }
+            
+            uploadResults.innerHTML = html;
+            uploadStatus.innerHTML = '解析成功！您可以将这些IP用于代理节点配置。';
+            uploadStatus.className = 'upload-status success';
+            
+            // 添加导出按钮
+            const exportBtn = document.createElement('button');
+            exportBtn.className = 'upload-btn';
+            exportBtn.style.marginLeft = '10px';
+            exportBtn.textContent = '导出解析结果';
+            exportBtn.addEventListener('click', () => {
+              // 创建选择对话框
+              const exportDialog = document.createElement('div');
+              exportDialog.style.position = 'fixed';
+              exportDialog.style.top = '50%';
+              exportDialog.style.left = '50%';
+              exportDialog.style.transform = 'translate(-50%, -50%)';
+              exportDialog.style.background = 'white';
+              exportDialog.style.padding = '20px';
+              exportDialog.style.borderRadius = '8px';
+              exportDialog.style.boxShadow = '0 0 10px rgba(0,0,0,0.3)';
+              exportDialog.style.zIndex = '1000';
+              exportDialog.style.maxWidth = '600px';
+              exportDialog.style.width = '90%';
+              exportDialog.style.maxHeight = '80vh';
+              exportDialog.style.overflowY = 'auto';
+              
+              // 添加标题
+              const title = document.createElement('h3');
+              title.textContent = '导出设置';
+              title.style.marginTop = '0';
+              exportDialog.appendChild(title);
+              
+              // 创建两列布局
+              const columnsDiv = document.createElement('div');
+              columnsDiv.style.display = 'flex';
+              columnsDiv.style.flexWrap = 'wrap';
+              columnsDiv.style.gap = '20px';
+              
+              // === 地区选择部分 ===
+              const regionColumn = document.createElement('div');
+              regionColumn.style.flex = '1';
+              regionColumn.style.minWidth = '250px';
+              
+              const regionTitle = document.createElement('h4');
+              regionTitle.textContent = '选择地区';
+              regionTitle.style.marginTop = '0';
+              regionColumn.appendChild(regionTitle);
+              
+              // 添加地区全选/取消按钮
+              const regionButtonsDiv = document.createElement('div');
+              regionButtonsDiv.style.display = 'flex';
+              regionButtonsDiv.style.gap = '10px';
+              regionButtonsDiv.style.marginBottom = '10px';
+              
+              const selectAllRegionsBtn = document.createElement('button');
+              selectAllRegionsBtn.textContent = '全选地区';
+              selectAllRegionsBtn.className = 'upload-btn';
+              selectAllRegionsBtn.style.padding = '5px 10px';
+              selectAllRegionsBtn.style.fontSize = '14px';
+              
+              const deselectAllRegionsBtn = document.createElement('button');
+              deselectAllRegionsBtn.textContent = '取消全选';
+              deselectAllRegionsBtn.className = 'upload-btn';
+              deselectAllRegionsBtn.style.padding = '5px 10px';
+              deselectAllRegionsBtn.style.background = '#ccc';
+              
+              regionButtonsDiv.appendChild(selectAllRegionsBtn);
+              regionButtonsDiv.appendChild(deselectAllRegionsBtn);
+              regionColumn.appendChild(regionButtonsDiv);
+              
+              // 添加地区筛选搜索框
+              const regionSearchDiv = document.createElement('div');
+              regionSearchDiv.style.marginBottom = '10px';
+              
+              const regionSearchInput = document.createElement('input');
+              regionSearchInput.type = 'text';
+              regionSearchInput.placeholder = '搜索地区...';
+              regionSearchInput.style.width = '100%';
+              regionSearchInput.style.padding = '5px';
+              regionSearchInput.style.borderRadius = '4px';
+              regionSearchInput.style.border = '1px solid #ddd';
+              
+              regionSearchDiv.appendChild(regionSearchInput);
+              regionColumn.appendChild(regionSearchDiv);
+              
+              // 地区选择容器
+              const regionsDiv = document.createElement('div');
+              regionsDiv.style.maxHeight = '300px';
+              regionsDiv.style.overflowY = 'auto';
+              regionsDiv.style.border = '1px solid #eee';
+              regionsDiv.style.padding = '10px';
+              regionsDiv.style.borderRadius = '4px';
+              
+              // 按大区分组显示地区
+              for (const [areaName, regionIds] of Object.entries(regionsByArea)) {
+                const areaDiv = document.createElement('div');
+                areaDiv.style.marginBottom = '15px';
+                
+                const areaTitle = document.createElement('h5');
+                areaTitle.textContent = areaName;
+                areaTitle.style.margin = '0 0 5px 0';
+                areaTitle.style.borderBottom = '1px solid #eee';
+                areaTitle.style.paddingBottom = '3px';
+                areaDiv.appendChild(areaTitle);
+                
+                const regionsInAreaDiv = document.createElement('div');
+                regionsInAreaDiv.style.display = 'flex';
+                regionsInAreaDiv.style.flexWrap = 'wrap';
+                regionsInAreaDiv.style.gap = '5px';
+                
+                regionIds.forEach(regionId => {
+                  const regionName = regions[regionId] || regionId;
+                  
+                  const regionLabel = document.createElement('label');
+                  regionLabel.style.display = 'flex';
+                  regionLabel.style.alignItems = 'center';
+                  regionLabel.style.margin = '3px 10px 3px 0';
+                  regionLabel.style.width = 'calc(50% - 10px)';
+                  regionLabel.className = 'export-region-option';
+                  regionLabel.dataset.region = regionId;
+                  regionLabel.dataset.name = regionName;
+                  
+                  const regionCheck = document.createElement('input');
+                  regionCheck.type = 'checkbox';
+                  regionCheck.value = regionId;
+                  regionCheck.className = 'export-region-checkbox';
+                  regionCheck.checked = true; // 默认选中所有地区
+                  regionCheck.style.marginRight = '5px';
+                  
+                  regionLabel.appendChild(regionCheck);
+                  regionLabel.appendChild(document.createTextNode(regionName));
+                  regionsInAreaDiv.appendChild(regionLabel);
+                });
+                
+                areaDiv.appendChild(regionsInAreaDiv);
+                regionsDiv.appendChild(areaDiv);
+              }
+              
+              regionColumn.appendChild(regionsDiv);
+              columnsDiv.appendChild(regionColumn);
+              
+              // === 端口选择部分 ===
+              const portColumn = document.createElement('div');
+              portColumn.style.flex = '1';
+              portColumn.style.minWidth = '250px';
+              
+              const portTitle = document.createElement('h4');
+              portTitle.textContent = '选择端口';
+              portTitle.style.marginTop = '0';
+              portColumn.appendChild(portTitle);
+              
+              // 添加端口全选/取消按钮
+              const portButtonsDiv = document.createElement('div');
+              portButtonsDiv.style.display = 'flex';
+              portButtonsDiv.style.gap = '10px';
+              portButtonsDiv.style.marginBottom = '10px';
+              
+              const selectAllPortsBtn = document.createElement('button');
+              selectAllPortsBtn.textContent = '全选端口';
+              selectAllPortsBtn.className = 'upload-btn';
+              selectAllPortsBtn.style.padding = '5px 10px';
+              selectAllPortsBtn.style.fontSize = '14px';
+              
+              const deselectAllPortsBtn = document.createElement('button');
+              deselectAllPortsBtn.textContent = '取消全选';
+              deselectAllPortsBtn.className = 'upload-btn';
+              deselectAllPortsBtn.style.padding = '5px 10px';
+              deselectAllPortsBtn.style.fontSize = '14px';
+              deselectAllPortsBtn.style.background = '#ccc';
+              
+              portButtonsDiv.appendChild(selectAllPortsBtn);
+              portButtonsDiv.appendChild(deselectAllPortsBtn);
+              portColumn.appendChild(portButtonsDiv);
+              
+              // 添加端口选择容器
+              const portsDiv = document.createElement('div');
+              portsDiv.style.maxHeight = '300px';
+              portsDiv.style.overflowY = 'auto';
+              portsDiv.style.border = '1px solid #eee';
+              portsDiv.style.padding = '10px';
+              portsDiv.style.borderRadius = '4px';
+              
+              // 定义可选端口
+              const availablePorts = [
+                {port: '80', group: '80系', default: true},
+                {port: '8080', group: '80系', default: true},
+                {port: '8880', group: '80系', default: true},
+                {port: '2052', group: '80系', default: true},
+                {port: '2082', group: '80系', default: true},
+                {port: '2086', group: '80系', default: true},
+                {port: '2095', group: '80系', default: true},
+                {port: '443', group: '443系', default: true},
+                {port: '2053', group: '443系', default: true},
+                {port: '2083', group: '443系', default: true},
+                {port: '2087', group: '443系', default: true},
+                {port: '2096', group: '443系', default: true},
+                {port: '8443', group: '443系', default: true}
+              ];
+              
+              // 按组分类端口
+              const portGroups = {};
+              availablePorts.forEach(portInfo => {
+                if (!portGroups[portInfo.group]) {
+                  portGroups[portInfo.group] = [];
+                }
+                portGroups[portInfo.group].push(portInfo);
+              });
+              
+              // 创建端口选择UI
+              Object.entries(portGroups).forEach(([group, ports]) => {
+                const groupDiv = document.createElement('div');
+                groupDiv.style.marginBottom = '15px';
+                
+                const groupTitle = document.createElement('h5');
+                groupTitle.textContent = group;
+                groupTitle.style.margin = '0 0 5px 0';
+                groupTitle.style.borderBottom = '1px solid #eee';
+                groupTitle.style.paddingBottom = '3px';
+                groupDiv.appendChild(groupTitle);
+                
+                const portsInGroupDiv = document.createElement('div');
+                portsInGroupDiv.style.display = 'flex';
+                portsInGroupDiv.style.flexWrap = 'wrap';
+                portsInGroupDiv.style.gap = '5px';
+                
+                ports.forEach(portInfo => {
+                  const portLabel = document.createElement('label');
+                  portLabel.style.display = 'flex';
+                  portLabel.style.alignItems = 'center';
+                  portLabel.style.margin = '3px 10px 3px 0';
+                  portLabel.style.width = 'calc(50% - 10px)';
+                  
+                  const portCheck = document.createElement('input');
+                  portCheck.type = 'checkbox';
+                  portCheck.value = portInfo.port;
+                  portCheck.className = 'export-port-checkbox';
+                  portCheck.checked = portInfo.default || true; // 默认全选
+                  portCheck.style.marginRight = '5px';
+                  
+                  portLabel.appendChild(portCheck);
+                  portLabel.appendChild(document.createTextNode(portInfo.port));
+                  portsInGroupDiv.appendChild(portLabel);
+                });
+                
+                groupDiv.appendChild(portsInGroupDiv);
+                portsDiv.appendChild(groupDiv);
+              });
+              
+              portColumn.appendChild(portsDiv);
+              columnsDiv.appendChild(portColumn);
+              exportDialog.appendChild(columnsDiv);
+              
+              // 添加按钮
+              const buttonDiv = document.createElement('div');
+              buttonDiv.style.display = 'flex';
+              buttonDiv.style.justifyContent = 'flex-end';
+              buttonDiv.style.gap = '10px';
+              buttonDiv.style.marginTop = '20px';
+              
+              const cancelBtn = document.createElement('button');
+              cancelBtn.textContent = '取消';
+              cancelBtn.className = 'upload-btn';
+              cancelBtn.style.background = '#ccc';
+              cancelBtn.addEventListener('click', () => {
+                document.body.removeChild(exportDialog);
+                document.body.removeChild(overlay);
+              });
+              
+              const confirmBtn = document.createElement('button');
+              confirmBtn.textContent = '导出';
+              confirmBtn.className = 'upload-btn';
+              confirmBtn.addEventListener('click', () => {
+                // 获取选中的端口
+                const selectedPorts = [];
+                exportDialog.querySelectorAll('.export-port-checkbox:checked').forEach(checkbox => {
+                  selectedPorts.push(checkbox.value);
+                });
+                
+                // 获取选中的地区
+                const selectedRegionIds = [];
+                exportDialog.querySelectorAll('.export-region-checkbox:checked').forEach(checkbox => {
+                  selectedRegionIds.push(checkbox.value);
+                });
+                
+                // 如果没有选择端口，默认使用443
+                if (selectedPorts.length === 0) {
+                  selectedPorts.push('443');
+                }
+                
+                // 如果没有选择地区，提示用户
+                if (selectedRegionIds.length === 0) {
+                  alert('请至少选择一个地区');
+                  return;
+                }
+                
+                // 生成导出内容
+                let exportContent = '';
+                
+                // 按大区分组导出
+                for (const [areaName, regionIds] of Object.entries(regionsByArea)) {
+                  // 过滤出选中的地区
+                  const selectedRegions = regionIds.filter(id => selectedRegionIds.includes(id));
+                  
+                  if (selectedRegions.length === 0) continue; // 如果该大区没有选中的地区，跳过
+                  
+                  exportContent += `# ====== ${areaName} ======\n\n`;
+                  
+                  for (const regionId of selectedRegions) {
+                    if (optimizedIPs[regionId] && optimizedIPs[regionId].length > 0) {
+                      exportContent += `# ${regions[regionId] || regionId} 地区\n`;
+                      optimizedIPs[regionId].forEach(ip => {
+                        // 为每个选中的端口生成一行
+                        selectedPorts.forEach(port => {
+                          exportContent += `${ip}:${port} # ${regions[regionId] || regionId}\n`;
+                        });
+                      });
+                      exportContent += '\n';
+                    }
+                  }
+                }
+                
+                // 创建下载链接
+                const blob = new Blob([exportContent], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'cloudflare-optimized-ips.txt';
+                a.click();
+                URL.revokeObjectURL(url);
+                
+                // 关闭对话框
+                document.body.removeChild(exportDialog);
+                document.body.removeChild(overlay);
+              });
+              
+              buttonDiv.appendChild(cancelBtn);
+              buttonDiv.appendChild(confirmBtn);
+              exportDialog.appendChild(buttonDiv);
+              
+              // 绑定地区搜索功能
+              regionSearchInput.addEventListener('input', function() {
+                const searchText = this.value.toLowerCase();
+                exportDialog.querySelectorAll('.export-region-option').forEach(option => {
+                  const regionName = option.dataset.name.toLowerCase();
+                  const regionId = option.dataset.region.toLowerCase();
+                  
+                  if (searchText === '' || regionName.includes(searchText) || regionId.includes(searchText)) {
+                    option.style.display = '';
+                  } else {
+                    option.style.display = 'none';
+                  }
+                });
+              });
+              
+              // 绑定地区全选/取消按钮
+              selectAllRegionsBtn.addEventListener('click', () => {
+                exportDialog.querySelectorAll('.export-region-checkbox').forEach(checkbox => {
+                  checkbox.checked = true;
+                });
+              });
+              
+              deselectAllRegionsBtn.addEventListener('click', () => {
+                exportDialog.querySelectorAll('.export-region-checkbox').forEach(checkbox => {
+                  checkbox.checked = false;
+                });
+              });
+              
+              // 绑定端口全选/取消按钮
+              selectAllPortsBtn.addEventListener('click', () => {
+                exportDialog.querySelectorAll('.export-port-checkbox').forEach(checkbox => {
+                  checkbox.checked = true;
+                });
+              });
+              
+              deselectAllPortsBtn.addEventListener('click', () => {
+                exportDialog.querySelectorAll('.export-port-checkbox').forEach(checkbox => {
+                  checkbox.checked = false;
+                });
+              });
+              
+              // 添加遮罩层
+              const overlay = document.createElement('div');
+              overlay.style.position = 'fixed';
+              overlay.style.top = '0';
+              overlay.style.left = '0';
+              overlay.style.width = '100%';
+              overlay.style.height = '100%';
+              overlay.style.background = 'rgba(0,0,0,0.5)';
+              overlay.style.zIndex = '999';
+              
+              // 添加到页面
+              document.body.appendChild(overlay);
+              document.body.appendChild(exportDialog);
+            });
+            
+            // 添加按钮到状态区域
+            uploadStatus.appendChild(exportBtn);
+            
+            // 自动开始测试功能
+            if (document.getElementById('auto-test').checked) {
+              // 延迟一秒后自动开始测试，确保IP列表已加载
+              setTimeout(() => {
+                document.getElementById('start-test').click();
+              }, 1000);
+            }
+          } catch (error) {
+            uploadStatus.innerHTML = '解析文件失败: ' + error.message;
+            uploadStatus.className = 'upload-status error';
+          }
+        };
+        
+        reader.onerror = () => {
+          uploadStatus.innerHTML = '读取文件失败';
+          uploadStatus.className = 'upload-status error';
+        };
+        
+        reader.readAsText(file);
+      });
+    });
+  </script>
+</body>
+</html> 

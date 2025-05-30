@@ -20,6 +20,7 @@ let userMaxLatency = 200; // 默认最大可接受延迟(ms)
 let userMaxTestIPs = 200; // 默认最大测试IP数量（降低为200）
 let batchSize = 30; // 每批测试的IP数量
 let batchDelay = 1000; // 批次间延迟(ms)
+let maxRetries = 2; // 最大重试次数
 
 // 配置参数
 const CONFIG = {
@@ -28,9 +29,21 @@ const CONFIG = {
   concurrentTests: 3,    // 并发测试数量，避免被阻止
   testCount: 5,          // 每个IP测试次数
   timeout: 5000,         // 超时时间(毫秒)
+  retryTimeout: 3000,    // 重试时的超时时间(更短以快速失败)
   topCount: 5,           // 每个国家优质IP选取数量
   testUrl: 'https://api.ipify.org', // 用于IP测试的URL
   testMethod: 'CONNECT', // 使用CONNECT方法进行TCP连通性测试
+  // 备用测试URL，当主URL失败时尝试
+  backupTestUrls: [
+    'https://www.cloudflare.com/cdn-cgi/trace', 
+    'https://1.1.1.1/cdn-cgi/trace', 
+    'https://1.0.0.1/cdn-cgi/trace'
+  ],
+  // IP类型定义
+  ipTypes: [
+    {id: 'ipv4', name: 'IPv4'},
+    {id: 'ipv6', name: 'IPv6'}
+  ],
   // 定义要测试的端口列表
   ports: {
     '80': { name: '80', group: '80系', enabled: true },
@@ -254,10 +267,6 @@ const CONFIG = {
     {id: 'tv', name: '图瓦卢', region: '大洋洲'},
     {id: 'vu', name: '瓦努阿图', region: '大洋洲'}
   ],
-  ipTypes: [
-    {id: 'ipv4', name: 'IPv4'},
-    {id: 'ipv6', name: 'IPv6'}
-  ],
   maxLatency: 200,       // 默认最大延迟阈值(ms)
   maxTestIPs: 500        // 默认最大测试IP数量
 };
@@ -303,6 +312,10 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     console.error('找不到导出结果按钮，无法绑定事件');
   }
+  
+  // 初始化IP类型选择
+  // 默认选中所有IP类型
+  selectedIPTypes = CONFIG.ipTypes.map(type => type.id);
   
   // 添加每区域IP数量设置
   const settingsContainer = document.querySelector('.settings');
@@ -504,9 +517,20 @@ async function startTest() {
     
     // 获取选择的IP类型
     selectedIPTypes = [];
-    document.querySelectorAll('.ip-type-checkbox:checked').forEach(checkbox => {
+    document.querySelectorAll('.ip-type-filter:checked').forEach(checkbox => {
       selectedIPTypes.push(checkbox.value);
     });
+    
+    // 调试IP类型选择
+    console.log('IP类型筛选器:', document.querySelectorAll('.ip-type-filter').length);
+    console.log('已选中的IP类型筛选器:', document.querySelectorAll('.ip-type-filter:checked').length);
+    console.log('selectedIPTypes:', selectedIPTypes);
+    
+    // 如果没有选择任何IP类型，默认使用所有IP类型
+    if (selectedIPTypes.length === 0) {
+      selectedIPTypes = CONFIG.ipTypes.map(type => type.id);
+      console.log('未选择IP类型，默认使用所有IP类型:', selectedIPTypes);
+    }
     
     // 获取选择的端口
     const selectedPortIds = [];
@@ -515,6 +539,20 @@ async function startTest() {
       // 启用选中的端口
       CONFIG.ports[checkbox.value].enabled = true;
     });
+    
+    // 调试端口选择
+    console.log('端口筛选器:', document.querySelectorAll('.port-checkbox').length);
+    console.log('已选中的端口筛选器:', document.querySelectorAll('.port-checkbox:checked').length);
+    console.log('selectedPortIds:', selectedPortIds);
+    
+    // 如果没有选择任何端口，默认使用80和443端口
+    if (selectedPortIds.length === 0) {
+      selectedPortIds.push('80', '443');
+      // 启用默认端口
+      if (CONFIG.ports['80']) CONFIG.ports['80'].enabled = true;
+      if (CONFIG.ports['443']) CONFIG.ports['443'].enabled = true;
+      console.log('未选择端口，默认使用端口:', selectedPortIds);
+    }
     
     // 至少需要选择一种IP类型
     if (selectedIPTypes.length === 0) {
@@ -791,7 +829,9 @@ async function testIpLatency(ip) {
     totalLatency: 9999,
     region: 'unknown',
     status: 'timeout',
-    ports: [] // 记录可用的端口
+    ports: [], // 记录可用的端口
+    colo: '', // CloudFlare的数据中心代码
+    actualRegion: '', // 根据实际内容探测的地区
   };
   
   try {
@@ -808,34 +848,67 @@ async function testIpLatency(ip) {
     // 简化测试端口，提高成功率
     const portsToTest = ['443', '80'];
     
-    // 使用简化的单端口测试方法，无需进行多端口测试
-    // 先测试443端口（CloudFlare主要端口）
+    // 测试端口
     const testPort = async (port) => {
       // 构建URL
       const protocol = port === '443' || port === '2053' || port === '2083' || 
                       port === '2087' || port === '2096' || port === '8443' ? 'https' : 'http';
       const formattedIp = isIpv6 ? `[${realIp}]` : realIp;
+      
+      // 使用CloudFlare的trace接口，这会返回实际节点信息
       const url = `${protocol}://${formattedIp}:${port}/cdn-cgi/trace`;
       
       // 记录开始时间
       const startTime = performance.now();
       
-      // 首先尝试使用XMLHttpRequest进行CONNECT测试
+      // 首先尝试使用XMLHttpRequest进行内容探测
       try {
         const result = await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
-          xhr.open('HEAD', url);
+          xhr.open('GET', url);
           xhr.timeout = CONFIG.timeout;
           
           xhr.onload = function() {
             const endTime = performance.now();
             const latency = endTime - startTime;
+            
+            // 尝试解析响应内容以获取CloudFlare的数据中心信息
+            let colo = '';
+            let traceRegion = '';
+            
+            try {
+              // 解析CF的trace内容
+              const responseText = xhr.responseText;
+              // 查找colo=XXX行，这表示CloudFlare的数据中心代码
+              const coloMatch = responseText.match(/colo=([A-Z]{3})/);
+              if (coloMatch && coloMatch[1]) {
+                colo = coloMatch[1];
+                // 根据CloudFlare的数据中心代码判断实际地区
+                traceRegion = getRegionFromColo(colo);
+              }
+              
+              // 查找loc=XX行，这表示国家代码
+              const locMatch = responseText.match(/loc=([A-Z]{2})/);
+              if (locMatch && locMatch[1]) {
+                // 将国家代码转换为地区ID
+                const countryCode = locMatch[1].toLowerCase();
+                // 如果没有从colo获取到地区，则使用loc信息
+                if (!traceRegion) {
+                  traceRegion = countryCode;
+                }
+              }
+            } catch (e) {
+              console.log(`解析trace内容出错: ${e.message}`);
+            }
+            
             resolve({
               success: true,
               port: port,
               latency: latency,
               tcpLatency: latency * 0.6,
-              httpLatency: latency * 0.4
+              httpLatency: latency * 0.4,
+              colo: colo,
+              traceRegion: traceRegion
             });
           };
           
@@ -867,7 +940,9 @@ async function testIpLatency(ip) {
           xhr.send();
         });
         
-        console.log(`IP ${realIp} 端口 ${port} 测试成功 (XHR)，延迟: ${result.latency.toFixed(2)}ms`);
+        console.log(`IP ${realIp} 端口 ${port} 测试成功 (XHR)，延迟: ${result.latency.toFixed(2)}ms` + 
+                   (result.colo ? `，数据中心: ${result.colo}` : '') + 
+                   (result.traceRegion ? `，实际地区: ${result.traceRegion}` : ''));
         return result;
       } catch (xhrError) {
         console.log(`IP ${realIp} 端口 ${port} XHR测试失败，尝试fetch方法: ${xhrError.message}`);
@@ -957,58 +1032,73 @@ async function testIpLatency(ip) {
       result.totalLatency = bestResult.latency;
       result.status = 'success';
       
+      // 如果探测到了数据中心信息，则记录下来
+      if (bestResult.colo) {
+        result.colo = bestResult.colo;
+      }
+      
+      // 如果探测到了实际地区信息，则优先使用它
+      if (bestResult.traceRegion) {
+        result.actualRegion = bestResult.traceRegion;
+        // 使用实际探测到的地区作为结果
+        result.region = bestResult.traceRegion;
+      } else {
+        // 如果没有探测到，则使用基于延迟的估算
+        // 根据延迟综合评估地理位置
+        const avgLatency = result.latency;
+        const latencyFactor = userMaxLatency / 200; // 根据用户设置的延迟阈值调整区域判断标准
+        
+        // 亚洲区域 (基于传播距离估算) - 放宽判断条件以提高成功率
+        if (avgLatency < 50 * latencyFactor) result.region = 'cn'; // 中国大陆
+        else if (avgLatency < 80 * latencyFactor) result.region = 'hk'; // 香港
+        else if (avgLatency < 100 * latencyFactor) result.region = 'tw'; // 台湾
+        else if (avgLatency < 120 * latencyFactor) result.region = 'jp'; // 日本
+        else if (avgLatency < 140 * latencyFactor) result.region = 'kr'; // 韩国
+        else if (avgLatency < 160 * latencyFactor) result.region = 'sg'; // 新加坡
+        else if (avgLatency < 180 * latencyFactor) result.region = 'my'; // 马来西亚
+        else if (avgLatency < 200 * latencyFactor) result.region = 'th'; // 泰国
+        else if (avgLatency < 220 * latencyFactor) result.region = 'vn'; // 越南
+        else if (avgLatency < 240 * latencyFactor) result.region = 'ph'; // 菲律宾
+        else if (avgLatency < 260 * latencyFactor) result.region = 'in'; // 印度
+        // 大洋洲
+        else if (avgLatency < 280 * latencyFactor) result.region = 'au'; // 澳大利亚
+        else if (avgLatency < 300 * latencyFactor) result.region = 'nz'; // 新西兰
+        // 中东地区
+        else if (avgLatency < 320 * latencyFactor) result.region = 'ae'; // 阿联酋
+        // 欧洲区域
+        else if (avgLatency < 340 * latencyFactor) result.region = 'ru'; // 俄罗斯
+        else if (avgLatency < 360 * latencyFactor) result.region = 'tr'; // 土耳其
+        else if (avgLatency < 380 * latencyFactor) result.region = 'uk'; // 英国
+        else if (avgLatency < 400 * latencyFactor) result.region = 'fr'; // 法国
+        else if (avgLatency < 420 * latencyFactor) result.region = 'de'; // 德国
+        else if (avgLatency < 440 * latencyFactor) result.region = 'nl'; // 荷兰
+        else if (avgLatency < 460 * latencyFactor) result.region = 'it'; // 意大利
+        else if (avgLatency < 480 * latencyFactor) result.region = 'es'; // 西班牙
+        // 北美区域
+        else if (avgLatency < 500 * latencyFactor) result.region = 'us'; // 美国
+        else if (avgLatency < 520 * latencyFactor) result.region = 'ca'; // 加拿大
+        else if (avgLatency < 540 * latencyFactor) result.region = 'mx'; // 墨西哥
+        // 南美洲
+        else if (avgLatency < 560 * latencyFactor) result.region = 'br'; // 巴西
+        else if (avgLatency < 580 * latencyFactor) result.region = 'ar'; // 阿根廷
+        else if (avgLatency < 600 * latencyFactor) result.region = 'cl'; // 智利
+        // 非洲
+        else if (avgLatency < 620 * latencyFactor) result.region = 'za'; // 南非
+        else if (avgLatency < 640 * latencyFactor) result.region = 'eg'; // 埃及
+        else if (avgLatency < 660 * latencyFactor) result.region = 'ng'; // 尼日利亚
+        else result.region = 'unknown'; // 未知区域
+        
+        console.log(`IP ${realIp} 测试成功，延迟: ${result.latency.toFixed(2)}ms，区域: ${result.region}` +
+                   (result.colo ? `，数据中心: ${result.colo}` : '') +
+                   (result.actualRegion ? `，实际地区: ${result.actualRegion}` : ''));
+      }
+      
       // 记录可用端口
       portResults.forEach(r => {
         if (!result.ports.includes(r.port)) {
           result.ports.push(r.port);
         }
       });
-      
-      // 根据延迟综合评估地理位置
-      const avgLatency = result.latency;
-      const latencyFactor = userMaxLatency / 200; // 根据用户设置的延迟阈值调整区域判断标准
-      
-      // 亚洲区域 (基于传播距离估算) - 放宽判断条件以提高成功率
-      if (avgLatency < 50 * latencyFactor) result.region = 'cn'; // 中国大陆
-      else if (avgLatency < 80 * latencyFactor) result.region = 'hk'; // 香港
-      else if (avgLatency < 100 * latencyFactor) result.region = 'tw'; // 台湾
-      else if (avgLatency < 120 * latencyFactor) result.region = 'jp'; // 日本
-      else if (avgLatency < 140 * latencyFactor) result.region = 'kr'; // 韩国
-      else if (avgLatency < 160 * latencyFactor) result.region = 'sg'; // 新加坡
-      else if (avgLatency < 180 * latencyFactor) result.region = 'my'; // 马来西亚
-      else if (avgLatency < 200 * latencyFactor) result.region = 'th'; // 泰国
-      else if (avgLatency < 220 * latencyFactor) result.region = 'vn'; // 越南
-      else if (avgLatency < 240 * latencyFactor) result.region = 'ph'; // 菲律宾
-      else if (avgLatency < 260 * latencyFactor) result.region = 'in'; // 印度
-      // 大洋洲
-      else if (avgLatency < 280 * latencyFactor) result.region = 'au'; // 澳大利亚
-      else if (avgLatency < 300 * latencyFactor) result.region = 'nz'; // 新西兰
-      // 中东地区
-      else if (avgLatency < 320 * latencyFactor) result.region = 'ae'; // 阿联酋
-      // 欧洲区域
-      else if (avgLatency < 340 * latencyFactor) result.region = 'ru'; // 俄罗斯
-      else if (avgLatency < 360 * latencyFactor) result.region = 'tr'; // 土耳其
-      else if (avgLatency < 380 * latencyFactor) result.region = 'uk'; // 英国
-      else if (avgLatency < 400 * latencyFactor) result.region = 'fr'; // 法国
-      else if (avgLatency < 420 * latencyFactor) result.region = 'de'; // 德国
-      else if (avgLatency < 440 * latencyFactor) result.region = 'nl'; // 荷兰
-      else if (avgLatency < 460 * latencyFactor) result.region = 'it'; // 意大利
-      else if (avgLatency < 480 * latencyFactor) result.region = 'es'; // 西班牙
-      // 北美区域
-      else if (avgLatency < 500 * latencyFactor) result.region = 'us'; // 美国
-      else if (avgLatency < 520 * latencyFactor) result.region = 'ca'; // 加拿大
-      else if (avgLatency < 540 * latencyFactor) result.region = 'mx'; // 墨西哥
-      // 南美洲
-      else if (avgLatency < 560 * latencyFactor) result.region = 'br'; // 巴西
-      else if (avgLatency < 580 * latencyFactor) result.region = 'ar'; // 阿根廷
-      else if (avgLatency < 600 * latencyFactor) result.region = 'cl'; // 智利
-      // 非洲
-      else if (avgLatency < 620 * latencyFactor) result.region = 'za'; // 南非
-      else if (avgLatency < 640 * latencyFactor) result.region = 'eg'; // 埃及
-      else if (avgLatency < 660 * latencyFactor) result.region = 'ng'; // 尼日利亚
-      else result.region = 'unknown'; // 未知区域
-      
-      console.log(`IP ${realIp} 测试成功，延迟: ${result.latency.toFixed(2)}ms，区域: ${result.region}`);
     } else {
       console.log(`IP ${realIp} 测试失败，所有端口都无法连接`);
     }
@@ -1017,6 +1107,99 @@ async function testIpLatency(ip) {
   }
   
   return result;
+}
+
+// 根据CloudFlare的数据中心代码获取地区
+function getRegionFromColo(colo) {
+  // CloudFlare数据中心代码与地区对照表
+  // 参考: https://www.cloudflarestatus.com/
+  const coloRegionMap = {
+    // 北美
+    'EWR': 'us', // 纽瓦克 (美国)
+    'IAD': 'us', // 阿什本 (美国)
+    'ATL': 'us', // 亚特兰大 (美国)
+    'BOS': 'us', // 波士顿 (美国)
+    'DFW': 'us', // 达拉斯 (美国)
+    'DEN': 'us', // 丹佛 (美国)
+    'SEA': 'us', // 西雅图 (美国)
+    'SJC': 'us', // 圣何塞 (美国)
+    'LAX': 'us', // 洛杉矶 (美国)
+    'MIA': 'us', // 迈阿密 (美国)
+    'ORD': 'us', // 芝加哥 (美国)
+    'YUL': 'ca', // 蒙特利尔 (加拿大)
+    'YYZ': 'ca', // 多伦多 (加拿大)
+    'YVR': 'ca', // 温哥华 (加拿大)
+    
+    // 欧洲
+    'LHR': 'uk', // 伦敦 (英国)
+    'MAN': 'uk', // 曼彻斯特 (英国)
+    'CDG': 'fr', // 巴黎 (法国)
+    'MRS': 'fr', // 马赛 (法国)
+    'AMS': 'nl', // 阿姆斯特丹 (荷兰)
+    'FRA': 'de', // 法兰克福 (德国)
+    'MUC': 'de', // 慕尼黑 (德国)
+    'DUS': 'de', // 杜塞尔多夫 (德国)
+    'MAD': 'es', // 马德里 (西班牙)
+    'MXP': 'it', // 米兰 (意大利)
+    'VIE': 'at', // 维也纳 (奥地利)
+    'PRG': 'cz', // 布拉格 (捷克)
+    'WAW': 'pl', // 华沙 (波兰)
+    'BRU': 'be', // 布鲁塞尔 (比利时)
+    'SOF': 'bg', // 索非亚 (保加利亚)
+    'ZAG': 'hr', // 萨格勒布 (克罗地亚)
+    'CPH': 'dk', // 哥本哈根 (丹麦)
+    'HEL': 'fi', // 赫尔辛基 (芬兰)
+    'ATH': 'gr', // 雅典 (希腊)
+    'BUD': 'hu', // 布达佩斯 (匈牙利)
+    'OSL': 'no', // 奥斯陆 (挪威)
+    'BUH': 'ro', // 布加勒斯特 (罗马尼亚)
+    'BEG': 'rs', // 贝尔格莱德 (塞尔维亚)
+    'SVG': 'se', // 斯塔万格 (瑞典)
+    'IST': 'tr', // 伊斯坦布尔 (土耳其)
+    'DME': 'ru', // 莫斯科 (俄罗斯)
+    'LED': 'ru', // 圣彼得堡 (俄罗斯)
+    'ZRH': 'ch', // 苏黎世 (瑞士)
+    'LIS': 'pt', // 里斯本 (葡萄牙)
+    'DUB': 'ie', // 都柏林 (爱尔兰)
+    
+    // 亚洲
+    'HKG': 'hk', // 香港
+    'TPE': 'tw', // 台北 (台湾)
+    'NRT': 'jp', // 东京 (日本)
+    'KIX': 'jp', // 大阪 (日本)
+    'ICN': 'kr', // 首尔 (韩国)
+    'SIN': 'sg', // 新加坡
+    'BOM': 'in', // 孟买 (印度)
+    'MAA': 'in', // 金奈 (印度)
+    'DEL': 'in', // 德里 (印度)
+    'KUL': 'my', // 吉隆坡 (马来西亚)
+    'BKK': 'th', // 曼谷 (泰国)
+    'CGK': 'id', // 雅加达 (印度尼西亚)
+    'MNL': 'ph', // 马尼拉 (菲律宾)
+    'DXB': 'ae', // 迪拜 (阿联酋)
+    
+    // 大洋洲
+    'SYD': 'au', // 悉尼 (澳大利亚)
+    'MEL': 'au', // 墨尔本 (澳大利亚)
+    'PER': 'au', // 珀斯 (澳大利亚)
+    'AKL': 'nz', // 奥克兰 (新西兰)
+    
+    // 南美
+    'GRU': 'br', // 圣保罗 (巴西)
+    'GIG': 'br', // 里约热内卢 (巴西)
+    'EZE': 'ar', // 布宜诺斯艾利斯 (阿根廷)
+    'SCL': 'cl', // 圣地亚哥 (智利)
+    'BOG': 'co', // 波哥大 (哥伦比亚)
+    'LIM': 'pe', // 利马 (秘鲁)
+    
+    // 非洲
+    'JNB': 'za', // 约翰内斯堡 (南非)
+    'CPT': 'za', // 开普敦 (南非)
+    'CAI': 'eg', // 开罗 (埃及)
+    'LOS': 'ng', // 拉各斯 (尼日利亚)
+  };
+  
+  return coloRegionMap[colo] || '';
 }
 
 // 显示测试结果
@@ -1130,11 +1313,18 @@ function displayResults() {
       </div>
     `;
     
+    // 添加数据中心信息显示
+    let regionDisplay = regionInfo.name;
+    if (result.colo) {
+      regionDisplay += `<br><small>数据中心: ${result.colo}</small>`;
+    }
+    regionDisplay += `<br><small>(${regionInfo.region})</small>`;
+    
     row.innerHTML = `
       <td>${displayIp}</td>
       <td><span class="ip-type ${result.isIpv6 ? 'ipv6' : 'ipv4'}">${result.isIpv6 ? 'IPv6' : 'IPv4'}</span></td>
       <td>${latencyDetailHTML}</td>
-      <td>${regionInfo.name}<br><small>(${regionInfo.region})</small></td>
+      <td>${regionDisplay}</td>
       <td>${portsHTML || '<small>无可用端口</small>'}</td>
     `;
     tbody.appendChild(row);

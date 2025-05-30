@@ -1,6 +1,23 @@
 // 浏览器端IP测速工具
 // 使用fetch API测试IP的连通性和速度
 
+// 全局变量
+let ipv4List = [];  // IPv4地址列表
+let ipv6List = [];  // IPv6地址列表
+let testResults = []; // 测试结果
+let isTestRunning = false; // 是否正在运行测试
+let currentProgress = 0; // 当前进度
+let totalIps = 0; // 总IP数量
+let selectedRegions = []; // 选中的区域
+let selectedIPTypes = ['ipv4', 'ipv6']; // 选中的IP类型
+let selectedPorts = []; // 选中的端口
+let userIP = ''; // 用户的IP地址
+let userIsIPv6 = false; // 用户是否使用IPv6
+
+// 用户可配置参数
+let userMaxLatency = 200; // 默认最大可接受延迟(ms)
+let userMaxTestIPs = 500; // 默认最大测试IP数量
+
 // 配置参数
 const CONFIG = {
   ipv4File: 'ip/ips-v4.txt',  // 修正IP列表路径
@@ -8,7 +25,7 @@ const CONFIG = {
   concurrentTests: 3,    // 减少并发测试数量，避免被阻止
   testCount: 3,          // 每个IP测试次数
   timeout: 3000,         // 增加超时时间(ms)
-  topCount: 10,           // 选取的每个国家优质IP数量，默认改为10个
+  topCount: 5,           // 选取的每个国家优质IP数量，默认为5个
   testUrl: 'https://www.cloudflare.com/cdn-cgi/trace', // 使用CloudFlare的trace接口
   // 定义要测试的端口列表
   ports: {
@@ -258,18 +275,10 @@ function getMainRegions() {
   return Array.from(regions);
 }
 
-// 状态变量
-let ipv4List = [];
-let ipv6List = [];
-let testResults = [];
-let isTestRunning = false;
-let currentProgress = 0;
-let totalIps = 0;
-let userMaxLatency = CONFIG.maxLatency; // 用户自定义延迟阈值
-let userMaxTestIPs = CONFIG.maxTestIPs; // 用户自定义测试IP数量
-let selectedRegions = []; // 选择的区域
-let selectedIPTypes = ['ipv4', 'ipv6']; // 默认两种IP类型都选中
-let selectedPorts = Object.keys(CONFIG.ports).filter(port => CONFIG.ports[port].enabled); // 默认选择启用的端口
+// 初始化变量默认值
+userMaxLatency = CONFIG.maxLatency; // 用户自定义延迟阈值
+userMaxTestIPs = CONFIG.maxTestIPs; // 用户自定义测试IP数量
+selectedPorts = Object.keys(CONFIG.ports).filter(port => CONFIG.ports[port].enabled); // 默认选择启用的端口
 
 // 初始化页面
 document.addEventListener('DOMContentLoaded', () => {
@@ -360,42 +369,33 @@ function createUI() {
 // 加载IP列表
 async function loadIpLists() {
   try {
-    // 检查是否有内联IP列表
-    if (typeof INLINE_IPV4_LIST !== 'undefined' && INLINE_IPV4_LIST.length > 0) {
-      ipv4List = INLINE_IPV4_LIST;
-      console.log(`成功加载内联IPv4列表: ${ipv4List.length}个IP`);
+    // 尝试获取用户的IP地址
+    await getUserIP();
+    
+    // 从文件加载IPv4列表
+    const ipv4Response = await fetch(CONFIG.ipv4File);
+    if (ipv4Response.ok) {
+      const text = await ipv4Response.text();
+      ipv4List = text.split('\n').filter(line => line.trim() !== '');
+      console.log(`成功加载IPv4列表文件: ${ipv4List.length}个IP`);
     } else {
-      // 如果没有内联列表，尝试从文件加载
-      const ipv4Response = await fetch(CONFIG.ipv4File);
-      if (ipv4Response.ok) {
-        const text = await ipv4Response.text();
-        ipv4List = text.split('\n').filter(line => line.trim() !== '');
-        console.log(`成功加载IPv4列表文件: ${ipv4List.length}个IP`);
-      } else {
-        console.error(`加载IPv4列表失败: ${ipv4Response.status} ${ipv4Response.statusText}`);
-        throw new Error(`加载IPv4列表失败: HTTP ${ipv4Response.status}`);
-      }
+      console.error(`加载IPv4列表失败: ${ipv4Response.status} ${ipv4Response.statusText}`);
+      throw new Error(`加载IPv4列表失败: HTTP ${ipv4Response.status}`);
     }
     
-    // 检查是否有内联IPv6列表
-    if (typeof INLINE_IPV6_LIST !== 'undefined' && INLINE_IPV6_LIST.length > 0) {
-      ipv6List = INLINE_IPV6_LIST;
-      console.log(`成功加载内联IPv6列表: ${ipv6List.length}个IP`);
+    // 从文件加载IPv6列表
+    const ipv6Response = await fetch(CONFIG.ipv6File);
+    if (ipv6Response.ok) {
+      const text = await ipv6Response.text();
+      ipv6List = text.split('\n').filter(line => line.trim() !== '');
+      console.log(`成功加载IPv6列表文件: ${ipv6List.length}个IP`);
     } else {
-      // 如果没有内联列表，尝试从文件加载
-      const ipv6Response = await fetch(CONFIG.ipv6File);
-      if (ipv6Response.ok) {
-        const text = await ipv6Response.text();
-        ipv6List = text.split('\n').filter(line => line.trim() !== '');
-        console.log(`成功加载IPv6列表文件: ${ipv6List.length}个IP`);
-      } else {
-        console.error(`加载IPv6列表失败: ${ipv6Response.status} ${ipv6Response.statusText}`);
-        throw new Error(`加载IPv6列表失败: HTTP ${ipv6Response.status}`);
-      }
+      console.error(`加载IPv6列表失败: ${ipv6Response.status} ${ipv6Response.statusText}`);
+      throw new Error(`加载IPv6列表失败: HTTP ${ipv6Response.status}`);
     }
     
     // 更新状态
-    updateStatus(`加载完成: ${ipv4List.length} 个IPv4地址, ${ipv6List.length} 个IPv6地址`);
+    updateStatus(`加载完成: ${ipv4List.length} 个IPv4地址, ${ipv6List.length} 个IPv6地址，用户IP: ${userIP}`);
   } catch (error) {
     console.error("加载IP列表错误:", error);
     updateStatus(`加载IP列表失败: ${error.message}，请检查网络连接或刷新页面重试`);
@@ -405,6 +405,26 @@ async function loadIpLists() {
       progressContainer.style.backgroundColor = '#ffebee';
       progressContainer.style.border = '1px solid #f44336';
     }
+  }
+}
+
+// 获取用户IP地址
+async function getUserIP() {
+  try {
+    // 使用CloudFlare的trace接口获取用户IP
+    const response = await fetch('https://www.cloudflare.com/cdn-cgi/trace');
+    if (response.ok) {
+      const text = await response.text();
+      const lines = text.split('\n');
+      const ipLine = lines.find(line => line.startsWith('ip='));
+      if (ipLine) {
+        userIP = ipLine.substring(3);
+        userIsIPv6 = userIP.includes(':');
+        console.log(`获取到用户IP: ${userIP}, IPv6: ${userIsIPv6}`);
+      }
+    }
+  } catch (error) {
+    console.error('获取用户IP失败:', error);
   }
 }
 
@@ -969,14 +989,10 @@ async function runTest(selectedRegionIds, selectedIPTypeIds, selectedPortIds) {
     testList = testList.concat(ipv6List);
   }
   
-  // 限制测试数量
-  if (testList.length > userMaxTestIPs) {
-    testList = testList.slice(0, userMaxTestIPs);
-  }
-  
+  // 测试所有IP地址，不限制数量
   totalIps = testList.length;
   
-  updateStatus(`将测试 ${totalIps} 个IP地址，使用 ${selectedPorts.length} 个端口，每区域选择 ${CONFIG.topCount} 个IP...`);
+  updateStatus(`将测试 ${totalIps} 个IP地址，使用 ${selectedPorts.length} 个端口...`);
   
   // 批量测试IP
   await batchTestIps(testList);
@@ -1063,24 +1079,35 @@ async function testIpLatency(ip) {
     // 只测试已选择的端口
     const portsToTest = Object.keys(CONFIG.ports).filter(port => CONFIG.ports[port].enabled);
     
+    // 使用用户IP来测试而不是随机IP
+    const testIP = userIP && ((isIpv6 && userIsIPv6) || (!isIpv6 && !userIsIPv6)) ? userIP : realIp;
+    
     // 默认先测试443端口（不带端口号）
     if (portsToTest.includes('443')) {
       for (let i = 0; i < CONFIG.testCount; i++) {
         const startTime = performance.now();
         
         try {
-          // 使用图片加载测试连接，避免CORS问题
-          const imgTest = new Promise((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => resolve();
-            img.onerror = () => resolve(); // 即使加载失败也算连接成功，因为我们只测试延迟
-            img.src = `https://${realIp}/favicon.ico?t=${Date.now()}`;
+          // 使用fetch API替代图片加载，可以获取更准确的结果
+          // 添加用户的IP作为参数，测试从用户IP到目标IP的连接
+          const fetchTest = new Promise((resolve, reject) => {
+            fetch(`https://${realIp}/cdn-cgi/trace?ip=${encodeURIComponent(testIP)}&t=${Date.now()}`, {
+              method: 'GET',
+              mode: 'no-cors', // 使用no-cors模式避免CORS问题
+              cache: 'no-store',
+              headers: {
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+              }
+            })
+            .then(() => resolve())
+            .catch(() => resolve()); // 即使请求失败也视为连接成功，因为我们只测试延迟
             
             // 设置超时
             setTimeout(() => reject(new Error('Timeout')), CONFIG.timeout);
           });
           
-          await imgTest;
+          await fetchTest;
           
           const endTime = performance.now();
           const latency = endTime - startTime;
@@ -1106,18 +1133,25 @@ async function testIpLatency(ip) {
       try {
         const startTime = performance.now();
         
-        // 使用图片加载测试连接，避免CORS问题
-        const imgTest = new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve(true);
-          img.onerror = () => resolve(true); // 即使加载失败也算连接成功，因为我们只测试延迟
-          img.src = `https://${realIp}:${port}/favicon.ico?t=${Date.now()}`;
+        // 使用fetch API替代图片加载
+        const fetchTest = new Promise((resolve, reject) => {
+          fetch(`https://${realIp}:${port}/cdn-cgi/trace?ip=${encodeURIComponent(testIP)}&t=${Date.now()}`, {
+            method: 'GET',
+            mode: 'no-cors', // 使用no-cors模式避免CORS问题
+            cache: 'no-store',
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache'
+            }
+          })
+          .then(() => resolve())
+          .catch(() => resolve()); // 即使请求失败也视为连接成功，因为我们只测试延迟
           
           // 设置超时
           setTimeout(() => reject(new Error('Timeout')), CONFIG.timeout);
         });
         
-        await imgTest;
+        await fetchTest;
         
         const endTime = performance.now();
         const portLatency = endTime - startTime;
@@ -1222,13 +1256,8 @@ function displayResults() {
     resultsByRegion[result.region].push(result);
   });
   
-  // 对每个区域选择最优的5个IP
-  let finalResults = [];
-  Object.keys(resultsByRegion).forEach(region => {
-    // 获取该地区最优的5个IP
-    const topIPs = resultsByRegion[region].slice(0, CONFIG.topCount);
-    finalResults = finalResults.concat(topIPs);
-  });
+  // 显示所有测试结果，而不仅仅是每个区域的前几个
+  let finalResults = filteredResults;
   
   // 最终按延迟排序
   finalResults.sort((a, b) => a.latency - b.latency);
@@ -1990,4 +2019,4 @@ function exportResults() {
 // 更新状态文本
 function updateStatus(message) {
   document.getElementById('progress-text').textContent = message;
-} 
+}

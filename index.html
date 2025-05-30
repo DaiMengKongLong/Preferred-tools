@@ -641,6 +641,37 @@
         min-width: 100%;
       }
     }
+    
+    .auto-test-checkbox {
+      display: flex;
+      align-items: center;
+      margin: 5px 10px;
+      cursor: pointer;
+    }
+    
+    .auto-test-checkbox input {
+      margin-right: 5px;
+    }
+    
+    .light-mode-checkbox {
+      display: flex;
+      align-items: center;
+      margin: 5px 10px;
+      cursor: pointer;
+      background: #f0f8ff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid #d0e8ff;
+    }
+    
+    .light-mode-checkbox input {
+      margin-right: 5px;
+    }
+    
+    .light-mode-checkbox span {
+      color: #0066cc;
+      font-weight: 500;
+    }
   </style>
 </head>
 <body>
@@ -666,11 +697,15 @@
           </div>
           <div class="setting-item">
             <label for="max-ip-count">测试IP数量:</label>
-            <input type="number" id="max-ip-count" min="50" max="2000" value="500" placeholder="默认500个">
+            <input type="number" id="max-ip-count" min="50" max="2000" value="200" placeholder="默认200个">
           </div>
           <label class="auto-test-checkbox">
             <input type="checkbox" id="auto-test">
             <span>页面加载后自动开始优选</span>
+          </label>
+          <label class="light-mode-checkbox">
+            <input type="checkbox" id="light-mode" checked>
+            <span>轻量模式（减少卡顿）</span>
           </label>
         </div>
       </div>
@@ -680,9 +715,11 @@
         <ul>
           <li>点击"开始优选"按钮开始优选IP地址</li>
           <li>优选过程可能需要几分钟，请耐心等待</li>
+          <li>启用"轻量模式"可减少浏览器卡顿，提高测试稳定性（推荐）</li>
+          <li>轻量模式下会分批测试IP，每批之间有短暂暂停，减轻浏览器负担</li>
           <li>优选完成后，可以使用筛选器选择查看不同国家/地区和IP类型</li>
           <li>可以选择需要测试的端口类型（80系和443系）</li>
-          <li>每个国家/地区默认会优选出10个最佳IP地址，可自定义数量</li>
+          <li>每个国家/地区默认会优选出5个最佳IP地址，可自定义数量</li>
           <li>结果将按照延迟从低到高排序显示</li>
           <li>延迟信息包含总延迟、TCP连接延迟和HTTP响应延迟</li>
           <li>TCP延迟主要反映网络距离，HTTP延迟反映服务器处理能力</li>

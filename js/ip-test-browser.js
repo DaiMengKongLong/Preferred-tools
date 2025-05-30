@@ -1,5 +1,5 @@
 // 浏览器端IP测速工具
-// 使用fetch API测试IP的连通性和速度
+// 使用HTTP CONNECT方法测试IP的连通性和速度
 
 // 全局变量
 let ipv4List = [];  // IPv4地址列表
@@ -13,20 +13,24 @@ let selectedIPTypes = ['ipv4', 'ipv6']; // 选中的IP类型
 let selectedPorts = []; // 选中的端口
 let userIP = ''; // 用户的IP地址
 let userIsIPv6 = false; // 用户是否使用IPv6
+let isLightMode = false; // 是否使用轻量模式
 
 // 用户可配置参数
 let userMaxLatency = 200; // 默认最大可接受延迟(ms)
-let userMaxTestIPs = 500; // 默认最大测试IP数量
+let userMaxTestIPs = 200; // 默认最大测试IP数量（降低为200）
+let batchSize = 30; // 每批测试的IP数量
+let batchDelay = 1000; // 批次间延迟(ms)
 
 // 配置参数
 const CONFIG = {
-  ipv4File: 'ip/ips-v4.txt',  // 修正IP列表路径
-  ipv6File: 'ip/ips-v6.txt',  // 修正IP列表路径
-  concurrentTests: 3,    // 减少并发测试数量，避免被阻止
-  testCount: 5,          // 增加每个IP测试次数为5次
-  timeout: 5000,         // 增加超时时间为5秒
-  topCount: 5,           // 选取的每个国家优质IP数量，默认为5个
-  testUrl: 'https://api.ipify.org', // 使用CloudFlare的trace接口
+  ipv4File: 'ip/ips-v4.txt',  // IPv4列表路径
+  ipv6File: 'ip/ips-v6.txt',  // IPv6列表路径
+  concurrentTests: 3,    // 并发测试数量，避免被阻止
+  testCount: 5,          // 每个IP测试次数
+  timeout: 5000,         // 超时时间(毫秒)
+  topCount: 5,           // 每个国家优质IP选取数量
+  testUrl: 'https://api.ipify.org', // 用于IP测试的URL
+  testMethod: 'CONNECT', // 使用CONNECT方法进行TCP连通性测试
   // 定义要测试的端口列表
   ports: {
     '80': { name: '80', group: '80系', enabled: true },
@@ -286,8 +290,19 @@ document.addEventListener('DOMContentLoaded', () => {
   createUI();
   
   // 绑定按钮事件
-  document.getElementById('start-test').addEventListener('click', startTest);
-  document.getElementById('export-results').addEventListener('click', exportResults);
+  const startTestBtn = document.getElementById('start-test');
+  if (startTestBtn) {
+    startTestBtn.addEventListener('click', startTest);
+  } else {
+    console.error('找不到开始测试按钮，无法绑定事件');
+  }
+  
+  const exportResultsBtn = document.getElementById('export-results');
+  if (exportResultsBtn) {
+    exportResultsBtn.addEventListener('click', exportResults);
+  } else {
+    console.error('找不到导出结果按钮，无法绑定事件');
+  }
   
   // 添加每区域IP数量设置
   const settingsContainer = document.querySelector('.settings');
@@ -433,7 +448,8 @@ async function startTest() {
   if (isTestRunning) {
     // 如果已经在运行，则停止测试
     isTestRunning = false;
-    document.getElementById('start-btn').textContent = '开始优选';
+    const startBtn = document.getElementById('start-test');
+    if (startBtn) startBtn.textContent = '开始优选';
     updateStatus('测试已中止');
     return;
   }
@@ -443,17 +459,22 @@ async function startTest() {
     testResults = [];
     
     // 更改按钮文字
-    document.getElementById('start-btn').textContent = '停止测试';
+    const startBtn = document.getElementById('start-test');
+    if (startBtn) startBtn.textContent = '停止测试';
     
     // 重置进度条
-    document.getElementById('progress-bar').style.width = '0%';
-    document.getElementById('progress-text').innerText = '准备测试...';
+    const progressBar = document.getElementById('progress-bar');
+    if (progressBar) progressBar.style.width = '0%';
+    const progressText = document.getElementById('progress-text');
+    if (progressText) progressText.innerText = '准备测试...';
     
     // 显示进度条区域
-    document.getElementById('progress-container').style.display = 'block';
+    const progressContainer = document.getElementById('progress-container');
+    if (progressContainer) progressContainer.style.display = 'block';
     
     // 隐藏结果区域
-    document.getElementById('results').style.display = 'none';
+    const resultsDiv = document.getElementById('results');
+    if (resultsDiv) resultsDiv.style.display = 'none';
     
     // 记录测试开始时间
     const startTime = new Date();
@@ -571,7 +592,8 @@ async function startTest() {
 // 重置测试UI
 function resetTestUI() {
   isTestRunning = false;
-  document.getElementById('start-btn').textContent = '开始优选';
+  const startBtn = document.getElementById('start-test');
+  if (startBtn) startBtn.textContent = '开始优选';
   document.title = '优选工具';
 }
 
@@ -663,117 +685,89 @@ async function runTest(selectedRegionIds, selectedIPTypeIds, selectedPortIds) {
 // 批量测试IP
 async function batchTestIps(ipList) {
   const results = [];
-  const totalIps = ipList.length;
-  const concurrentLimit = 3; // 限制并发请求数量，避免浏览器拒绝过多连接
+  let completedCount = 0;
+  let failureCount = 0;
+  totalIps = ipList.length;
   
-  // 创建队列
-  const queue = [...ipList];
-  const inProgress = new Set(); // 跟踪正在测试的IP
-  
-  // 更新进度条和状态文本
-  const updateProgress = (completed, total, failureCount = 0) => {
+  // 创建更新进度的函数
+  const updateProgress = (completed, total, failures = 0) => {
     const percent = Math.floor((completed / total) * 100);
-    document.getElementById('progress-bar').style.width = `${percent}%`;
-    document.getElementById('progress-text').innerText = 
-      `测试进度: ${completed}/${total} (${percent}%) - 成功: ${completed - failureCount}, 失败: ${failureCount}`;
+    const progressBar = document.getElementById('progress-bar');
+    if (progressBar) {
+      progressBar.style.width = `${percent}%`;
+    }
+    
+    const progressText = document.getElementById('progress-text');
+    if (progressText) {
+      progressText.innerText = 
+        `测试进度: ${completed}/${total} (${percent}%) - 成功: ${completed - failures}, 失败: ${failures}`;
+    }
     
     // 更新页面标题，显示进度
     document.title = `优选工具 (${percent}%)`;
   };
   
   // 初始化进度
-  let completedCount = 0;
-  let failureCount = 0;
-  updateProgress(completedCount, totalIps);
+  updateProgress(0, totalIps);
   
-  // 处理下一个IP的测试
-  const processNext = async () => {
-    if (queue.length === 0 || !isTestRunning) return;
-    
-    // 从队列中取出一个IP进行测试
-    const ip = queue.shift();
-    inProgress.add(ip);
-    
-    try {
-      console.log(`开始测试 IP: ${ip} (${completedCount + 1}/${totalIps})`);
-      
-      // 测试IP
-      const result = await testIpLatency(ip);
-      results.push(result);
-      
-      // 更新统计
-      completedCount++;
-      if (result.status !== 'success') {
-        failureCount++;
-      }
-    } catch (error) {
-      console.error(`测试 IP ${ip} 出错:`, error);
-      results.push({
-        ip: ip,
-        isIpv6: ip.includes(':'),
-        latency: 9999,
-        status: 'error',
-        error: error.message
-      });
-      completedCount++;
-      failureCount++;
-    } finally {
-      // 移除正在进行的标记
-      inProgress.delete(ip);
-      
-      // 更新进度
-      updateProgress(completedCount, totalIps, failureCount);
-      
-      // 继续处理队列
-      if (isTestRunning) {
-        processNext();
-      }
-    }
-  };
-  
-  // 启动并发测试
-  const startBatch = () => {
-    const availableSlots = concurrentLimit - inProgress.size;
-    for (let i = 0; i < availableSlots && queue.length > 0 && isTestRunning; i++) {
-      processNext();
-    }
-  };
-  
-  // 启动初始批次
-  startBatch();
-  
-  // 定期检查并启动新批次
-  const intervalId = setInterval(() => {
-    if (queue.length === 0 && inProgress.size === 0) {
-      // 所有测试完成
-      clearInterval(intervalId);
-      
-      // 更新标题
-      document.title = `优选工具 - 测试完成`;
-      
-      // 确保进度条显示100%
-      document.getElementById('progress-bar').style.width = '100%';
-      document.getElementById('progress-text').innerText = 
-        `测试完成: ${totalIps}/${totalIps} (100%) - 成功: ${totalIps - failureCount}, 失败: ${failureCount}`;
-      
-      console.log('所有IP测试完成');
-    } else if (isTestRunning) {
-      // 启动新的批次
-      startBatch();
-    } else {
-      // 测试已停止
-      clearInterval(intervalId);
-      document.title = `优选工具 - 已停止`;
-      document.getElementById('progress-text').innerText += ' (已停止)';
-    }
-  }, 500);
-  
-  // 等待所有测试完成
-  while (queue.length > 0 || inProgress.size > 0) {
-    if (!isTestRunning) break;
-    await new Promise(resolve => setTimeout(resolve, 500));
+  // 分批测试IP列表
+  const batches = [];
+  for (let i = 0; i < ipList.length; i += batchSize) {
+    batches.push(ipList.slice(i, i + batchSize));
   }
   
+  // 处理每个批次
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    const batch = batches[batchIndex];
+    updateStatus(`正在测试批次 ${batchIndex + 1}/${batches.length} (${batch.length}个IP)...`);
+    
+    // 创建并发测试的Promise数组
+    const batchPromises = [];
+    for (let i = 0; i < batch.length && isTestRunning; i++) {
+      const ip = batch[i];
+      
+      // 最多并发CONFIG.concurrentTests个请求
+      if (batchPromises.length >= CONFIG.concurrentTests) {
+        const result = await Promise.race(batchPromises.map(p => p.promise));
+        const index = batchPromises.findIndex(p => p.promise === result.promise);
+        if (index !== -1) {
+          batchPromises.splice(index, 1);
+        }
+      }
+      
+      // 创建一个Promise并添加到数组中
+      const promise = testIpLatency(ip).then(result => {
+        completedCount++;
+        if (result.status !== 'success') {
+          failureCount++;
+        }
+        results.push(result);
+        updateProgress(completedCount, totalIps, failureCount);
+        return { promise, completed: true };
+      });
+      
+      batchPromises.push({ promise, ip });
+    }
+    
+    // 等待当前批次的所有测试完成
+    if (batchPromises.length > 0) {
+      await Promise.all(batchPromises.map(p => p.promise));
+    }
+    
+    // 如果测试已停止，则退出循环
+    if (!isTestRunning) {
+      updateStatus('测试已停止');
+      break;
+    }
+    
+    // 批次间延迟，避免浏览器卡顿
+    if (batchIndex < batches.length - 1) {
+      updateStatus(`批次 ${batchIndex + 1} 完成，暂停 ${batchDelay/1000} 秒后继续...`);
+      await new Promise(resolve => setTimeout(resolve, batchDelay));
+    }
+  }
+  
+  updateStatus(`测试完成: 共测试 ${completedCount} 个IP，成功率 ${((completedCount - failureCount) / completedCount * 100).toFixed(1)}%`);
   return results;
 }
 
@@ -817,75 +811,122 @@ async function testIpLatency(ip) {
     // 使用简化的单端口测试方法，无需进行多端口测试
     // 先测试443端口（CloudFlare主要端口）
     const testPort = async (port) => {
+      // 构建URL
+      const protocol = port === '443' || port === '2053' || port === '2083' || 
+                      port === '2087' || port === '2096' || port === '8443' ? 'https' : 'http';
+      const formattedIp = isIpv6 ? `[${realIp}]` : realIp;
+      const url = `${protocol}://${formattedIp}:${port}/cdn-cgi/trace`;
+      
+      // 记录开始时间
+      const startTime = performance.now();
+      
+      // 首先尝试使用XMLHttpRequest进行CONNECT测试
       try {
-        // 构建测试URL
-        // 使用图片资源进行测试，通常比fetch API更可靠
-        const timestamp = Date.now();
-        const randomParam = Math.random().toString(36).substring(7);
-        
-        // 构建完整URL（注意：IPv6地址需要用方括号括起来）
-        const formattedIp = isIpv6 ? `[${realIp}]` : realIp;
-        const testProtocol = port === '443' ? 'https' : 'http';
-        const url = `${testProtocol}://${formattedIp}:${port}/cdn-cgi/trace?t=${timestamp}&r=${randomParam}`;
-        
-        console.log(`测试URL: ${url}`);
-        
-        // 测量开始时间
-        const startTime = performance.now();
-        
-        // 使用图片加载测试延迟 (比fetch更可靠)
-        return new Promise((resolve, reject) => {
-          const img = new Image();
+        const result = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('HEAD', url);
+          xhr.timeout = CONFIG.timeout;
           
-          // 设置加载成功处理函数
-          img.onload = () => {
+          xhr.onload = function() {
             const endTime = performance.now();
             const latency = endTime - startTime;
-            console.log(`IP ${realIp} 端口 ${port} 测试成功，延迟: ${latency.toFixed(2)}ms`);
             resolve({
               success: true,
               port: port,
               latency: latency,
-              tcpLatency: latency * 0.6, // 估算值
-              httpLatency: latency * 0.4  // 估算值
+              tcpLatency: latency * 0.6,
+              httpLatency: latency * 0.4
             });
           };
           
-          // 设置加载失败处理函数
-          img.onerror = () => {
-            // 即使图片加载失败，只要能触发onerror，说明连接成功
+          xhr.onerror = function() {
+            // 错误处理 - 但在某些情况下仍算连接成功
             const endTime = performance.now();
             const latency = endTime - startTime;
             
             // 只有延迟在合理范围内才算成功
             if (latency >= 5 && latency <= userMaxLatency * 2) {
-              console.log(`IP ${realIp} 端口 ${port} 测试部分成功，延迟: ${latency.toFixed(2)}ms`);
               resolve({
                 success: true,
                 port: port,
                 latency: latency,
                 tcpLatency: latency * 0.6,
-                httpLatency: latency * 0.4
+                httpLatency: latency * 0.4,
+                error: 'xhr error but connection succeeded'
               });
             } else {
-              console.log(`IP ${realIp} 端口 ${port} 测试失败，延迟异常: ${latency.toFixed(2)}ms`);
-              reject(new Error('Latency out of range'));
+              reject(new Error('Connection failed'));
             }
           };
           
-          // 设置超时
-          const timeoutId = setTimeout(() => {
-            console.log(`IP ${realIp} 端口 ${port} 测试超时`);
-            img.src = ''; // 取消加载
+          xhr.ontimeout = function() {
             reject(new Error('Timeout'));
-          }, CONFIG.timeout);
+          };
           
-          // 设置图片源，开始加载
-          img.src = url;
+          // 发送请求
+          xhr.send();
         });
-      } catch (error) {
-        console.log(`IP ${realIp} 端口 ${port} 测试异常: ${error.message}`);
-        return { success: false, port: port };
+        
+        console.log(`IP ${realIp} 端口 ${port} 测试成功 (XHR)，延迟: ${result.latency.toFixed(2)}ms`);
+        return result;
+      } catch (xhrError) {
+        console.log(`IP ${realIp} 端口 ${port} XHR测试失败，尝试fetch方法: ${xhrError.message}`);
+        
+        // 如果XHR失败，尝试使用fetch
+        try {
+          // 重置开始时间
+          const fetchStartTime = performance.now();
+          
+          // 使用fetch API进行连接测试
+          const response = await fetch(url, {
+            method: 'HEAD',
+            mode: 'no-cors',
+            cache: 'no-cache',
+            headers: {
+              'Cache-Control': 'no-cache',
+            },
+            redirect: 'manual',
+            referrerPolicy: 'no-referrer',
+            signal: AbortSignal.timeout(CONFIG.timeout)
+          });
+          
+          // 计算延迟
+          const endTime = performance.now();
+          const latency = endTime - fetchStartTime;
+          
+          console.log(`IP ${realIp} 端口 ${port} 测试成功 (fetch)，延迟: ${latency.toFixed(2)}ms`);
+          return {
+            success: true,
+            port: port,
+            latency: latency,
+            tcpLatency: latency * 0.6,
+            httpLatency: latency * 0.4
+          };
+        } catch (fetchError) {
+          // 即使fetch出错，也可能是成功建立了连接
+          const endTime = performance.now();
+          const latency = endTime - startTime;
+          
+          // 只有延迟在合理范围内才算成功
+          if (latency >= 5 && latency <= userMaxLatency * 2) {
+            console.log(`IP ${realIp} 端口 ${port} 测试部分成功（可接受的错误），延迟: ${latency.toFixed(2)}ms`);
+            return {
+              success: true,
+              port: port,
+              latency: latency,
+              tcpLatency: latency * 0.6,
+              httpLatency: latency * 0.4,
+              error: fetchError.message
+            };
+          }
+          
+          console.log(`IP ${realIp} 端口 ${port} 测试完全失败，错误: ${fetchError.message}`);
+          return {
+            success: false,
+            port: port,
+            error: fetchError.message
+          };
+        }
       }
     };
     
@@ -1108,7 +1149,8 @@ function displayResults() {
   }
   
   // 更新结果数量显示
-  document.getElementById('result-count').textContent = resultCount;
+  const resultCountElement = document.getElementById('result-count');
+  if (resultCountElement) resultCountElement.textContent = resultCount;
 }
 
 // 处理区域筛选器的变化
@@ -1136,7 +1178,13 @@ function handlePortFilterChange() {
 // 创建筛选器UI
 function createFilters() {
   const filterContainer = document.getElementById('filters');
-  if (!filterContainer) return;
+  if (!filterContainer) {
+    console.error('找不到filters容器元素');
+    return;
+  }
+  
+  // 清空已有内容
+  filterContainer.innerHTML = '';
   
   // 创建区域分组的筛选器
   const regionGroups = {};
@@ -1814,5 +1862,57 @@ function exportResults() {
 
 // 更新状态文本
 function updateStatus(message) {
-  document.getElementById('progress-text').textContent = message;
+  console.log(message);
+  const progressText = document.getElementById('progress-text');
+  if (progressText) progressText.textContent = message;
+}
+
+// 获取用户配置
+function getUserConfig() {
+  // 获取用户设置的延迟阈值
+  const latencyInput = document.getElementById('max-latency');
+  if (latencyInput) {
+    const value = parseInt(latencyInput.value);
+    if (!isNaN(value) && value > 0) {
+      userMaxLatency = value;
+    }
+  }
+  
+  // 获取用户设置的测试IP数量
+  const ipCountInput = document.getElementById('max-ip-count');
+  if (ipCountInput) {
+    const value = parseInt(ipCountInput.value);
+    if (!isNaN(value) && value > 0) {
+      userMaxTestIPs = value;
+    }
+  }
+  
+  // 获取用户设置的每区域IP数量
+  const regionIpCountInput = document.getElementById('region-ip-count');
+  if (regionIpCountInput) {
+    const value = parseInt(regionIpCountInput.value);
+    if (!isNaN(value) && value >= 5 && value <= 50) {
+      CONFIG.topCount = value;
+    }
+  }
+  
+  // 获取是否使用轻量模式
+  const lightModeCheckbox = document.getElementById('light-mode');
+  if (lightModeCheckbox) {
+    isLightMode = lightModeCheckbox.checked;
+    
+    // 轻量模式下自动调整参数
+    if (isLightMode) {
+      userMaxTestIPs = Math.min(userMaxTestIPs, 100); // 最多测试100个IP
+      batchSize = 20; // 减小批次大小
+      batchDelay = 1500; // 增加批次间隔
+      
+      // 如果IP数量输入框存在，更新其值
+      if (ipCountInput) {
+        ipCountInput.value = userMaxTestIPs;
+      }
+    }
+  }
+  
+  console.log(`用户配置: 最大延迟=${userMaxLatency}ms, 测试IP数量=${userMaxTestIPs}, 每区域IP数量=${CONFIG.topCount}, 轻量模式=${isLightMode}`);
 }

@@ -26,7 +26,7 @@ const CONFIG = {
   testCount: 3,          // 每个IP测试次数
   timeout: 3000,         // 增加超时时间(ms)
   topCount: 5,           // 选取的每个国家优质IP数量，默认为5个
-  testUrl: 'https://www.cloudflare.com/cdn-cgi/trace', // 使用CloudFlare的trace接口
+  testUrl: 'https://api.ipify.org', // 使用CloudFlare的trace接口
   // 定义要测试的端口列表
   ports: {
     '80': { name: '80', group: '80系', enabled: true },
@@ -412,7 +412,7 @@ async function loadIpLists() {
 async function getUserIP() {
   try {
     // 使用CloudFlare的trace接口获取用户IP
-    const response = await fetch('https://www.cloudflare.com/cdn-cgi/trace');
+    const response = await fetch('https://api.ipify.org');
     if (response.ok) {
       const text = await response.text();
       const lines = text.split('\n');
@@ -1091,7 +1091,7 @@ async function testIpLatency(ip) {
           // 使用fetch API替代图片加载，可以获取更准确的结果
           // 添加用户的IP作为参数，测试从用户IP到目标IP的连接
           const fetchTest = new Promise((resolve, reject) => {
-            fetch(`https://${realIp}/cdn-cgi/trace?ip=${encodeURIComponent(testIP)}&t=${Date.now()}`, {
+            fetch(`https://${realIp}?ip=${encodeURIComponent(testIP)}&t=${Date.now()}`, {
               method: 'GET',
               mode: 'no-cors', // 使用no-cors模式避免CORS问题
               cache: 'no-store',
@@ -1135,7 +1135,7 @@ async function testIpLatency(ip) {
         
         // 使用fetch API替代图片加载
         const fetchTest = new Promise((resolve, reject) => {
-          fetch(`https://${realIp}:${port}/cdn-cgi/trace?ip=${encodeURIComponent(testIP)}&t=${Date.now()}`, {
+          fetch(`https://${realIp}:${port}?ip=${encodeURIComponent(testIP)}&t=${Date.now()}`, {
             method: 'GET',
             mode: 'no-cors', // 使用no-cors模式避免CORS问题
             cache: 'no-store',

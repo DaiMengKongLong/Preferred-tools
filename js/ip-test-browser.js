@@ -23,8 +23,8 @@ const CONFIG = {
   ipv4File: 'ip/ips-v4.txt',  // 修正IP列表路径
   ipv6File: 'ip/ips-v6.txt',  // 修正IP列表路径
   concurrentTests: 3,    // 减少并发测试数量，避免被阻止
-  testCount: 3,          // 每个IP测试次数
-  timeout: 3000,         // 增加超时时间(ms)
+  testCount: 5,          // 增加每个IP测试次数为5次
+  timeout: 5000,         // 增加超时时间为5秒
   topCount: 5,           // 选取的每个国家优质IP数量，默认为5个
   testUrl: 'https://api.ipify.org', // 使用CloudFlare的trace接口
   // 定义要测试的端口列表
@@ -1075,6 +1075,7 @@ async function testIpLatency(ip) {
     // 多次测试取平均值
     let totalLatency = 0;
     let successCount = 0;
+    let minLatency = Infinity;
     
     // 只测试已选择的端口
     const portsToTest = Object.keys(CONFIG.ports).filter(port => CONFIG.ports[port].enabled);
@@ -1085,19 +1086,23 @@ async function testIpLatency(ip) {
     // 默认先测试443端口（不带端口号）
     if (portsToTest.includes('443')) {
       for (let i = 0; i < CONFIG.testCount; i++) {
-        const startTime = performance.now();
-        
         try {
+          // 使用更精确的时间测量
+          const startTime = performance.now();
+          
           // 使用fetch API替代图片加载，可以获取更准确的结果
           // 添加用户的IP作为参数，测试从用户IP到目标IP的连接
+          // 添加随机参数防止缓存
+          const randomParam = Math.random().toString(36).substring(7);
           const fetchTest = new Promise((resolve, reject) => {
-            fetch(`https://${realIp}?ip=${encodeURIComponent(testIP)}&t=${Date.now()}`, {
+            fetch(`https://${realIp}?ip=${encodeURIComponent(testIP)}&t=${Date.now()}&r=${randomParam}`, {
               method: 'GET',
               mode: 'no-cors', // 使用no-cors模式避免CORS问题
               cache: 'no-store',
               headers: {
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
               }
             })
             .then(() => resolve())
@@ -1112,12 +1117,16 @@ async function testIpLatency(ip) {
           const endTime = performance.now();
           const latency = endTime - startTime;
           
-          totalLatency += latency;
-          successCount++;
-          
-          // 默认的443端口
-          if (!result.ports.includes('443')) {
-            result.ports.push('443');
+          // 过滤掉异常值（如果延迟小于5ms，可能是浏览器缓存或其他问题）
+          if (latency >= 5) {
+            totalLatency += latency;
+            successCount++;
+            minLatency = Math.min(minLatency, latency);
+            
+            // 默认的443端口
+            if (!result.ports.includes('443')) {
+              result.ports.push('443');
+            }
           }
         } catch (error) {
           // 忽略错误，继续下一次测试
@@ -1131,17 +1140,19 @@ async function testIpLatency(ip) {
       if (port === '443') continue; // 跳过默认已测试的端口
       
       try {
+        const randomParam = Math.random().toString(36).substring(7);
         const startTime = performance.now();
         
         // 使用fetch API替代图片加载
         const fetchTest = new Promise((resolve, reject) => {
-          fetch(`https://${realIp}:${port}?ip=${encodeURIComponent(testIP)}&t=${Date.now()}`, {
+          fetch(`https://${realIp}:${port}?ip=${encodeURIComponent(testIP)}&t=${Date.now()}&r=${randomParam}`, {
             method: 'GET',
             mode: 'no-cors', // 使用no-cors模式避免CORS问题
             cache: 'no-store',
             headers: {
-              'Cache-Control': 'no-cache',
-              'Pragma': 'no-cache'
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+              'Expires': '0'
             }
           })
           .then(() => resolve())
@@ -1156,13 +1167,17 @@ async function testIpLatency(ip) {
         const endTime = performance.now();
         const portLatency = endTime - startTime;
         
-        // 如果能连接，记录端口
-        result.ports.push(port);
-        
-        // 如果是第一次测试成功，或者这个端口的延迟更低，更新总延迟
-        if (successCount === 0 || portLatency < totalLatency / successCount) {
-          totalLatency += portLatency;
-          successCount++;
+        // 过滤掉异常值
+        if (portLatency >= 5) {
+          // 如果能连接，记录端口
+          result.ports.push(port);
+          
+          // 如果是第一次测试成功，或者这个端口的延迟更低，更新总延迟
+          if (successCount === 0 || portLatency < minLatency) {
+            totalLatency += portLatency;
+            successCount++;
+            minLatency = Math.min(minLatency, portLatency);
+          }
         }
       } catch (error) {
         // 忽略错误，继续下一个端口
@@ -1172,7 +1187,8 @@ async function testIpLatency(ip) {
     
     // 计算平均延迟
     if (successCount > 0) {
-      const avgLatency = totalLatency / successCount;
+      // 使用最小延迟而不是平均延迟，可以更好地反映网络质量
+      const avgLatency = minLatency; // 或者 totalLatency / successCount;
       result.latency = avgLatency;
       result.status = 'success';
       
@@ -1295,10 +1311,23 @@ function displayResults() {
       portsHTML += `<div>443系: ${ports443.join(', ')}</div>`;
     }
     
+    // 格式化延迟显示，添加单位
+    let latencyDisplay = '';
+    if (result.latency < 1) {
+      // 如果延迟小于1ms，显示为小数点后2位的ms
+      latencyDisplay = `${result.latency.toFixed(2)} ms`;
+    } else if (result.latency < 100) {
+      // 如果延迟小于100ms，显示为整数ms
+      latencyDisplay = `${Math.round(result.latency)} ms`;
+    } else {
+      // 如果延迟大于等于100ms，显示为小数点后2位的秒
+      latencyDisplay = `${(result.latency / 1000).toFixed(2)} s`;
+    }
+    
     row.innerHTML = `
       <td>${result.ip}</td>
       <td><span class="ip-type ${result.isIpv6 ? 'ipv6' : 'ipv4'}">${result.isIpv6 ? 'IPv6' : 'IPv4'}</span></td>
-      <td>${result.latency.toFixed(2)}</td>
+      <td>${latencyDisplay}</td>
       <td>${regionInfo.name}<br><small>(${regionInfo.region})</small></td>
       <td>${portsHTML || '<small>无可用端口</small>'}</td>
     `;

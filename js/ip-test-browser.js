@@ -1066,6 +1066,9 @@ async function testIpLatency(ip) {
     ip: realIp, // 使用生成的真实IP地址
     isIpv6: isIpv6,
     latency: 9999,
+    tcpLatency: 9999, // TCP连接延迟
+    httpLatency: 9999, // HTTP响应延迟
+    totalLatency: 9999, // 综合延迟
     region: 'unknown',
     status: 'timeout',
     ports: [] // 记录可用的端口
@@ -1074,6 +1077,8 @@ async function testIpLatency(ip) {
   try {
     // 多次测试取平均值
     let totalLatency = 0;
+    let totalTcpLatency = 0;
+    let totalHttpLatency = 0;
     let successCount = 0;
     let minLatency = Infinity;
     
@@ -1090,43 +1095,62 @@ async function testIpLatency(ip) {
           // 使用更精确的时间测量
           const startTime = performance.now();
           
-          // 使用fetch API替代图片加载，可以获取更准确的结果
-          // 添加用户的IP作为参数，测试从用户IP到目标IP的连接
-          // 添加随机参数防止缓存
-          const randomParam = Math.random().toString(36).substring(7);
-          const fetchTest = new Promise((resolve, reject) => {
-            fetch(`https://${realIp}?ip=${encodeURIComponent(testIP)}&t=${Date.now()}&r=${randomParam}`, {
-              method: 'GET',
+          // 使用fetch API测试TCP连接和HTTP响应时间
+          const controller = new AbortController();
+          const signal = controller.signal;
+          const timeoutId = setTimeout(() => controller.abort(), CONFIG.timeout);
+          
+          try {
+            // 添加随机参数防止缓存
+            const randomParam = Math.random().toString(36).substring(7);
+            const url = `https://${realIp}?ip=${encodeURIComponent(testIP)}&t=${Date.now()}&r=${randomParam}`;
+            
+            // 测量TCP连接时间 (使用性能标记)
+            const tcpStartTime = performance.now();
+            
+            // 使用HEAD请求减少数据传输
+            const response = await fetch(url, {
+              method: 'HEAD',
               mode: 'no-cors', // 使用no-cors模式避免CORS问题
               cache: 'no-store',
+              credentials: 'omit',
+              redirect: 'manual',
+              signal,
               headers: {
                 'Cache-Control': 'no-cache, no-store, must-revalidate',
                 'Pragma': 'no-cache',
                 'Expires': '0'
               }
-            })
-            .then(() => resolve())
-            .catch(() => resolve()); // 即使请求失败也视为连接成功，因为我们只测试延迟
+            });
             
-            // 设置超时
-            setTimeout(() => reject(new Error('Timeout')), CONFIG.timeout);
-          });
-          
-          await fetchTest;
-          
-          const endTime = performance.now();
-          const latency = endTime - startTime;
-          
-          // 过滤掉异常值（如果延迟小于5ms，可能是浏览器缓存或其他问题）
-          if (latency >= 5) {
-            totalLatency += latency;
-            successCount++;
-            minLatency = Math.min(minLatency, latency);
+            const endTime = performance.now();
             
-            // 默认的443端口
-            if (!result.ports.includes('443')) {
-              result.ports.push('443');
+            // 计算总延迟和HTTP延迟
+            const totalTestLatency = endTime - startTime;
+            const tcpTestLatency = tcpStartTime - startTime; // TCP连接建立时间
+            const httpTestLatency = endTime - tcpStartTime; // HTTP响应时间
+            
+            // 过滤掉异常值（如果延迟小于5ms，可能是浏览器缓存或其他问题）
+            if (totalTestLatency >= 5) {
+              totalLatency += totalTestLatency;
+              totalTcpLatency += tcpTestLatency;
+              totalHttpLatency += httpTestLatency;
+              successCount++;
+              minLatency = Math.min(minLatency, totalTestLatency);
+              
+              // 默认的443端口
+              if (!result.ports.includes('443')) {
+                result.ports.push('443');
+              }
             }
+            
+            clearTimeout(timeoutId);
+          } catch (fetchError) {
+            // 如果是AbortError（超时），则忽略
+            if (fetchError.name !== 'AbortError') {
+              console.log(`测试IP ${realIp} 失败: ${fetchError.message}`);
+            }
+            clearTimeout(timeoutId);
           }
         } catch (error) {
           // 忽略错误，继续下一次测试
@@ -1141,43 +1165,61 @@ async function testIpLatency(ip) {
       
       try {
         const randomParam = Math.random().toString(36).substring(7);
-        const startTime = performance.now();
+        const url = `https://${realIp}:${port}?ip=${encodeURIComponent(testIP)}&t=${Date.now()}&r=${randomParam}`;
         
-        // 使用fetch API替代图片加载
-        const fetchTest = new Promise((resolve, reject) => {
-          fetch(`https://${realIp}:${port}?ip=${encodeURIComponent(testIP)}&t=${Date.now()}&r=${randomParam}`, {
-            method: 'GET',
-            mode: 'no-cors', // 使用no-cors模式避免CORS问题
+        const controller = new AbortController();
+        const signal = controller.signal;
+        const timeoutId = setTimeout(() => controller.abort(), CONFIG.timeout);
+        
+        try {
+          // 测量TCP连接时间
+          const startTime = performance.now();
+          const tcpStartTime = performance.now();
+          
+          // 使用HEAD请求减少数据传输
+          await fetch(url, {
+            method: 'HEAD',
+            mode: 'no-cors',
             cache: 'no-store',
+            credentials: 'omit',
+            redirect: 'manual',
+            signal,
             headers: {
               'Cache-Control': 'no-cache, no-store, must-revalidate',
               'Pragma': 'no-cache',
               'Expires': '0'
             }
-          })
-          .then(() => resolve())
-          .catch(() => resolve()); // 即使请求失败也视为连接成功，因为我们只测试延迟
+          });
           
-          // 设置超时
-          setTimeout(() => reject(new Error('Timeout')), CONFIG.timeout);
-        });
-        
-        await fetchTest;
-        
-        const endTime = performance.now();
-        const portLatency = endTime - startTime;
-        
-        // 过滤掉异常值
-        if (portLatency >= 5) {
-          // 如果能连接，记录端口
-          result.ports.push(port);
+          const endTime = performance.now();
           
-          // 如果是第一次测试成功，或者这个端口的延迟更低，更新总延迟
-          if (successCount === 0 || portLatency < minLatency) {
-            totalLatency += portLatency;
-            successCount++;
-            minLatency = Math.min(minLatency, portLatency);
+          // 计算端口延迟
+          const portLatency = endTime - startTime;
+          const tcpPortLatency = tcpStartTime - startTime;
+          const httpPortLatency = endTime - tcpStartTime;
+          
+          // 过滤掉异常值
+          if (portLatency >= 5) {
+            // 如果能连接，记录端口
+            result.ports.push(port);
+            
+            // 如果是第一次测试成功，或者这个端口的延迟更低，更新总延迟
+            if (successCount === 0 || portLatency < minLatency) {
+              totalLatency += portLatency;
+              totalTcpLatency += tcpPortLatency;
+              totalHttpLatency += httpPortLatency;
+              successCount++;
+              minLatency = Math.min(minLatency, portLatency);
+            }
           }
+          
+          clearTimeout(timeoutId);
+        } catch (fetchError) {
+          // 如果是AbortError（超时），则忽略
+          if (fetchError.name !== 'AbortError') {
+            console.log(`测试IP ${realIp} 端口 ${port} 失败: ${fetchError.message}`);
+          }
+          clearTimeout(timeoutId);
         }
       } catch (error) {
         // 忽略错误，继续下一个端口
@@ -1189,46 +1231,70 @@ async function testIpLatency(ip) {
     if (successCount > 0) {
       // 使用最小延迟而不是平均延迟，可以更好地反映网络质量
       const avgLatency = minLatency; // 或者 totalLatency / successCount;
+      const avgTcpLatency = totalTcpLatency / successCount;
+      const avgHttpLatency = totalHttpLatency / successCount;
+      
+      // 计算综合延迟得分，考虑不同类型延迟的权重
+      // 通常TCP连接时间主要反映网络距离和传播延迟，HTTP响应时间反映处理延迟
+      const weightedLatency = (avgTcpLatency * 0.6) + (avgHttpLatency * 0.4);
+      
       result.latency = avgLatency;
+      result.tcpLatency = avgTcpLatency;
+      result.httpLatency = avgHttpLatency;
+      result.totalLatency = weightedLatency;
       result.status = 'success';
       
       // 根据延迟估计地理位置
       const latencyFactor = userMaxLatency / 200; // 根据用户设置的延迟阈值调整区域判断标准
       
-      // 亚洲区域
-      if (avgLatency < 50 * latencyFactor) result.region = 'hk'; // 香港
-      else if (avgLatency < 80 * latencyFactor) result.region = 'tw'; // 台湾
-      else if (avgLatency < 100 * latencyFactor) result.region = 'jp'; // 日本
-      else if (avgLatency < 120 * latencyFactor) result.region = 'kr'; // 韩国
-      else if (avgLatency < 150 * latencyFactor) result.region = 'sg'; // 新加坡
-      else if (avgLatency < 160 * latencyFactor) result.region = 'my'; // 马来西亚
-      else if (avgLatency < 170 * latencyFactor) result.region = 'th'; // 泰国
-      else if (avgLatency < 180 * latencyFactor) result.region = 'vn'; // 越南
-      else if (avgLatency < 200 * latencyFactor) result.region = 'in'; // 印度
-      // 北美区域
-      else if (avgLatency < 220 * latencyFactor) result.region = 'us'; // 美国
-      else if (avgLatency < 240 * latencyFactor) result.region = 'ca'; // 加拿大
-      else if (avgLatency < 250 * latencyFactor) result.region = 'mx'; // 墨西哥
-      // 欧洲区域
-      else if (avgLatency < 260 * latencyFactor) result.region = 'uk'; // 英国
-      else if (avgLatency < 270 * latencyFactor) result.region = 'fr'; // 法国
-      else if (avgLatency < 280 * latencyFactor) result.region = 'de'; // 德国
-      else if (avgLatency < 290 * latencyFactor) result.region = 'nl'; // 荷兰
-      else if (avgLatency < 300 * latencyFactor) result.region = 'it'; // 意大利
-      else if (avgLatency < 310 * latencyFactor) result.region = 'es'; // 西班牙
-      else if (avgLatency < 320 * latencyFactor) result.region = 'se'; // 瑞典
-      else if (avgLatency < 330 * latencyFactor) result.region = 'ch'; // 瑞士
+      /* 
+       * 根据延迟综合评估地理位置
+       * 考虑传输延迟、处理延迟、排队延迟和传播延迟的综合因素
+       * 传播延迟公式：L = D/V，其中D为距离，V为光在光纤中的传播速度(约为2*10^8 m/s)
+       * 不同地区的基准参考值(毫秒)：
+       * - 同区域: 20-50ms (主要是处理和排队延迟)
+       * - 相邻国家/地区: 50-100ms (加上一定的传播延迟)
+       * - 跨洲际: 100-300ms (较长传播距离带来的显著传播延迟)
+       */
+      
+      // 亚洲区域 (基于传播距离估算)
+      if (avgLatency < 30 * latencyFactor) result.region = 'cn'; // 中国大陆
+      else if (avgLatency < 50 * latencyFactor) result.region = 'hk'; // 香港
+      else if (avgLatency < 60 * latencyFactor) result.region = 'tw'; // 台湾
+      else if (avgLatency < 70 * latencyFactor) result.region = 'jp'; // 日本
+      else if (avgLatency < 80 * latencyFactor) result.region = 'kr'; // 韩国
+      else if (avgLatency < 90 * latencyFactor) result.region = 'sg'; // 新加坡
+      else if (avgLatency < 100 * latencyFactor) result.region = 'my'; // 马来西亚
+      else if (avgLatency < 110 * latencyFactor) result.region = 'th'; // 泰国
+      else if (avgLatency < 120 * latencyFactor) result.region = 'vn'; // 越南
+      else if (avgLatency < 130 * latencyFactor) result.region = 'ph'; // 菲律宾
+      else if (avgLatency < 150 * latencyFactor) result.region = 'in'; // 印度
       // 大洋洲
-      else if (avgLatency < 340 * latencyFactor) result.region = 'au'; // 澳大利亚
-      else if (avgLatency < 350 * latencyFactor) result.region = 'nz'; // 新西兰
+      else if (avgLatency < 160 * latencyFactor) result.region = 'au'; // 澳大利亚
+      else if (avgLatency < 170 * latencyFactor) result.region = 'nz'; // 新西兰
+      // 中东地区
+      else if (avgLatency < 180 * latencyFactor) result.region = 'ae'; // 阿联酋
+      // 欧洲区域
+      else if (avgLatency < 190 * latencyFactor) result.region = 'ru'; // 俄罗斯
+      else if (avgLatency < 200 * latencyFactor) result.region = 'tr'; // 土耳其
+      else if (avgLatency < 210 * latencyFactor) result.region = 'uk'; // 英国
+      else if (avgLatency < 220 * latencyFactor) result.region = 'fr'; // 法国
+      else if (avgLatency < 230 * latencyFactor) result.region = 'de'; // 德国
+      else if (avgLatency < 240 * latencyFactor) result.region = 'nl'; // 荷兰
+      else if (avgLatency < 250 * latencyFactor) result.region = 'it'; // 意大利
+      else if (avgLatency < 260 * latencyFactor) result.region = 'es'; // 西班牙
+      // 北美区域
+      else if (avgLatency < 280 * latencyFactor) result.region = 'us'; // 美国
+      else if (avgLatency < 290 * latencyFactor) result.region = 'ca'; // 加拿大
+      else if (avgLatency < 300 * latencyFactor) result.region = 'mx'; // 墨西哥
       // 南美洲
-      else if (avgLatency < 360 * latencyFactor) result.region = 'br'; // 巴西
-      else if (avgLatency < 370 * latencyFactor) result.region = 'ar'; // 阿根廷
-      else if (avgLatency < 380 * latencyFactor) result.region = 'cl'; // 智利
+      else if (avgLatency < 320 * latencyFactor) result.region = 'br'; // 巴西
+      else if (avgLatency < 330 * latencyFactor) result.region = 'ar'; // 阿根廷
+      else if (avgLatency < 340 * latencyFactor) result.region = 'cl'; // 智利
       // 非洲
-      else if (avgLatency < 390 * latencyFactor) result.region = 'za'; // 南非
-      else if (avgLatency < 400 * latencyFactor) result.region = 'eg'; // 埃及
-      else if (avgLatency < 410 * latencyFactor) result.region = 'ng'; // 尼日利亚
+      else if (avgLatency < 350 * latencyFactor) result.region = 'za'; // 南非
+      else if (avgLatency < 360 * latencyFactor) result.region = 'eg'; // 埃及
+      else if (avgLatency < 370 * latencyFactor) result.region = 'ng'; // 尼日利亚
       else result.region = 'unknown'; // 未知区域
     }
   } catch (error) {
@@ -1312,22 +1378,37 @@ function displayResults() {
     }
     
     // 格式化延迟显示，添加单位
-    let latencyDisplay = '';
-    if (result.latency < 1) {
-      // 如果延迟小于1ms，显示为小数点后2位的ms
-      latencyDisplay = `${result.latency.toFixed(2)} ms`;
-    } else if (result.latency < 100) {
-      // 如果延迟小于100ms，显示为整数ms
-      latencyDisplay = `${Math.round(result.latency)} ms`;
-    } else {
-      // 如果延迟大于等于100ms，显示为小数点后2位的秒
-      latencyDisplay = `${(result.latency / 1000).toFixed(2)} s`;
-    }
+    const formatLatency = (ms) => {
+      if (ms < 1) {
+        // 如果延迟小于1ms，显示为小数点后2位的ms
+        return `${ms.toFixed(2)} ms`;
+      } else if (ms < 100) {
+        // 如果延迟小于100ms，显示为整数ms
+        return `${Math.round(ms)} ms`;
+      } else {
+        // 如果延迟大于等于100ms，显示为小数点后2位的秒
+        return `${(ms / 1000).toFixed(2)} s`;
+      }
+    };
+    
+    // 格式化各类延迟
+    const totalLatencyDisplay = formatLatency(result.latency);
+    const tcpLatencyDisplay = result.tcpLatency ? formatLatency(result.tcpLatency) : 'N/A';
+    const httpLatencyDisplay = result.httpLatency ? formatLatency(result.httpLatency) : 'N/A';
+    
+    // 创建延迟详情的HTML
+    const latencyDetailHTML = `
+      <div class="latency-main">${totalLatencyDisplay}</div>
+      <div class="latency-details">
+        <small>TCP: ${tcpLatencyDisplay}</small>
+        <small>HTTP: ${httpLatencyDisplay}</small>
+      </div>
+    `;
     
     row.innerHTML = `
       <td>${result.ip}</td>
       <td><span class="ip-type ${result.isIpv6 ? 'ipv6' : 'ipv4'}">${result.isIpv6 ? 'IPv6' : 'IPv4'}</span></td>
-      <td>${latencyDisplay}</td>
+      <td>${latencyDetailHTML}</td>
       <td>${regionInfo.name}<br><small>(${regionInfo.region})</small></td>
       <td>${portsHTML || '<small>无可用端口</small>'}</td>
     `;
@@ -1953,7 +2034,7 @@ function exportResults() {
           results.forEach(result => {
             // 为每个选中的端口生成一行
             selectedPorts.forEach(port => {
-              exportContent += `${result.ip}:${port} # ${region.name}\n`;
+              exportContent += `${result.ip}:${port}#${region.name}\n`;
             });
           });
           
@@ -1967,7 +2048,7 @@ function exportResults() {
     exportContent += `# 1. 这些IP是通过延迟测试优选出来的，可用于CloudFlare CDN加速\n`;
     exportContent += `# 2. 不同区域的IP可能有不同的网络路径和稳定性\n`;
     exportContent += `# 3. 每个国家/地区选取 ${CONFIG.topCount} 个最优IP\n`;
-    exportContent += `# 4. 格式为: IP:端口 # 国家或地区\n`;
+    exportContent += `# 4. 格式为: IP:端口#国家或地区\n`;
     exportContent += `# 5. 建议定期重新优选，以获取最佳体验\n`;
     exportContent += `# 6. 由呆萌恐龙优选工具生成\n`;
     

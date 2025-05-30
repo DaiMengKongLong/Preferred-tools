@@ -49,13 +49,58 @@ async function testIpLatency(ip) {
     if (avgMatch && avgMatch[1]) {
       const avgLatency = parseFloat(avgMatch[1]);
       
-      // 检测地理位置 (简单估计，实际应使用GeoIP数据库)
+      // 检测地理位置 (基于综合延迟估算)
       let region = 'unknown';
-      if (avgLatency < 50) region = 'local';
-      else if (avgLatency < 100) region = 'hk'; // 香港
-      else if (avgLatency < 150) region = 'jp'; // 日本
-      else if (avgLatency < 200) region = 'sg'; // 新加坡
-      else region = 'us'; // 美国或其他远距离地区
+      
+      /* 
+       * 根据延迟综合评估地理位置
+       * 考虑传输延迟、处理延迟、排队延迟和传播延迟的综合因素
+       * 传播延迟公式：L = D/V，其中D为距离，V为光在光纤中的传播速度(约为2*10^8 m/s)
+       * 不同地区的基准参考值(毫秒)：
+       * - 同区域: 20-50ms (主要是处理和排队延迟)
+       * - 相邻国家/地区: 50-100ms (加上一定的传播延迟)
+       * - 跨洲际: 100-300ms (较长传播距离带来的显著传播延迟)
+       */
+      
+      // 亚洲区域 (基于传播距离估算)
+      if (avgLatency < 30) region = 'cn'; // 中国大陆
+      else if (avgLatency < 50) region = 'hk'; // 香港
+      else if (avgLatency < 60) region = 'tw'; // 台湾
+      else if (avgLatency < 70) region = 'jp'; // 日本
+      else if (avgLatency < 80) region = 'kr'; // 韩国
+      else if (avgLatency < 90) region = 'sg'; // 新加坡
+      else if (avgLatency < 100) region = 'my'; // 马来西亚
+      else if (avgLatency < 110) region = 'th'; // 泰国
+      else if (avgLatency < 120) region = 'vn'; // 越南
+      else if (avgLatency < 130) region = 'ph'; // 菲律宾
+      else if (avgLatency < 150) region = 'in'; // 印度
+      // 大洋洲
+      else if (avgLatency < 160) region = 'au'; // 澳大利亚
+      else if (avgLatency < 170) region = 'nz'; // 新西兰
+      // 中东地区
+      else if (avgLatency < 180) region = 'ae'; // 阿联酋
+      // 欧洲区域
+      else if (avgLatency < 190) region = 'ru'; // 俄罗斯
+      else if (avgLatency < 200) region = 'tr'; // 土耳其
+      else if (avgLatency < 210) region = 'uk'; // 英国
+      else if (avgLatency < 220) region = 'fr'; // 法国
+      else if (avgLatency < 230) region = 'de'; // 德国
+      else if (avgLatency < 240) region = 'nl'; // 荷兰
+      else if (avgLatency < 250) region = 'it'; // 意大利
+      else if (avgLatency < 260) region = 'es'; // 西班牙
+      // 北美区域
+      else if (avgLatency < 280) region = 'us'; // 美国
+      else if (avgLatency < 290) region = 'ca'; // 加拿大
+      else if (avgLatency < 300) region = 'mx'; // 墨西哥
+      // 南美洲
+      else if (avgLatency < 320) region = 'br'; // 巴西
+      else if (avgLatency < 330) region = 'ar'; // 阿根廷
+      else if (avgLatency < 340) region = 'cl'; // 智利
+      // 非洲
+      else if (avgLatency < 350) region = 'za'; // 南非
+      else if (avgLatency < 360) region = 'eg'; // 埃及
+      else if (avgLatency < 370) region = 'ng'; // 尼日利亚
+      else region = 'unknown'; // 未知区域
       
       return {
         ip: ip,
@@ -126,7 +171,10 @@ function generateOptimizedList(groupedResults) {
     if (regionIps.length > 0) {
       optimizedList.push(`# ${region.toUpperCase()} 地区`);
       regionIps.forEach(result => {
-        optimizedList.push(`${result.ip} # 延迟: ${result.latency.toFixed(2)}ms`);
+        // 从CIDR格式提取IP
+        const baseIp = result.ip.split('/')[0];
+        // 添加端口号（默认为443，因为Cloudflare通常使用HTTPS）
+        optimizedList.push(`${baseIp}:443#${region} # 延迟: ${result.latency.toFixed(2)}ms`);
       });
       optimizedList.push('');  // 添加空行分隔
     }
@@ -173,4 +221,4 @@ async function main() {
   console.log(`已将优选IP保存至 ${CONFIG.outputFile}`);
 }
 
-main().catch(console.error); 
+main().catch(console.error);

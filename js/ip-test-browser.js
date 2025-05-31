@@ -310,19 +310,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // 默认选中所有IP类型
   selectedIPTypes = CONFIG.ipTypes.map(type => type.id);
   
-  // 获取用户设置的延迟阈值
-  const latencyInput = document.getElementById('max-latency');
-  if (latencyInput) {
-    latencyInput.addEventListener('change', () => {
-      const value = parseInt(latencyInput.value);
-      if (!isNaN(value) && value > 0) {
-        userMaxLatency = value;
-      } else {
-        latencyInput.value = userMaxLatency;
-      }
-    });
-  }
-  
   // 设置测试所有IP，不限制数量
   userMaxTestIPs = Number.MAX_SAFE_INTEGER;
   CONFIG.topCount = Number.MAX_SAFE_INTEGER;
@@ -330,8 +317,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // 创建筛选器
   createFilters();
   
-  // 加载IP列表
-  loadIpLists();
+  // 加载IP列表并立即获取用户IP
+  loadIpLists().then(() => {
+    getUserIP().then(() => {
+      updateStatus(`准备就绪，用户IP: ${userIP}`);
+    }).catch(error => {
+      console.error('获取用户IP出错:', error);
+      updateStatus('无法获取您的IP地址，请手动开始测试');
+    });
+  });
   
   // 全局提供CONFIG给其他脚本使用
   window.CONFIG = CONFIG;
@@ -389,7 +383,7 @@ async function loadIpLists() {
 async function getUserIP() {
   try {
     // 使用CloudFlare的trace接口获取用户IP
-    const response = await fetch('https://api.ipify.org');
+    const response = await fetch('https://cloudflare.com/cdn-cgi/trace');
     if (response.ok) {
       const text = await response.text();
       const lines = text.split('\n');
@@ -398,10 +392,26 @@ async function getUserIP() {
         userIP = ipLine.substring(3);
         userIsIPv6 = userIP.includes(':');
         console.log(`获取到用户IP: ${userIP}, IPv6: ${userIsIPv6}`);
+        return userIP;
       }
     }
+    
+    // 备用方法：使用ipify.org API
+    const backupResponse = await fetch('https://api.ipify.org?format=json');
+    if (backupResponse.ok) {
+      const data = await backupResponse.json();
+      if (data.ip) {
+        userIP = data.ip;
+        userIsIPv6 = userIP.includes(':');
+        console.log(`使用备用方法获取到用户IP: ${userIP}, IPv6: ${userIsIPv6}`);
+        return userIP;
+      }
+    }
+    
+    throw new Error('无法获取用户IP');
   } catch (error) {
     console.error('获取用户IP失败:', error);
+    throw error;
   }
 }
 
@@ -747,27 +757,16 @@ async function testIpLatency(ip) {
     tcpLatency: 9999,
     httpLatency: 9999,
     totalLatency: 9999,
-    region: 'unknown',
-    country: 'unknown',
-    city: '',
-    isp: '',
+    region: 'unknown', // 保留但不显示
     status: 'timeout',
-    ports: [], // 记录可用的端口
+    ports80: [], // 80系端口
+    ports443: [], // 443系端口
     colo: '', // CloudFlare的数据中心代码
   };
   
   try {
     // 调试信息
     console.log(`开始测试IP: ${baseIp}`);
-    
-    // 获取IP地理位置信息
-    const geoInfo = await getIpGeoLocationWithCache(baseIp);
-    if (geoInfo) {
-      result.region = geoInfo.country;
-      result.country = geoInfo.country;
-      result.city = geoInfo.city;
-      result.isp = geoInfo.isp;
-    }
     
     // 多次测试取平均值
     let totalLatency = 0;
@@ -776,14 +775,14 @@ async function testIpLatency(ip) {
     let successCount = 0;
     let minLatency = Infinity;
     
-    // 简化测试端口，提高成功率
-    const portsToTest = ['443', '80'];
+    // 分别测试80系和443系端口
+    const ports80 = ['80', '8080', '8880', '2052', '2082', '2086', '2095'];
+    const ports443 = ['443', '2053', '2083', '2087', '2096', '8443'];
     
     // 测试端口
     const testPort = async (port) => {
       // 构建URL
-      const protocol = port === '443' || port === '2053' || port === '2083' || 
-                      port === '2087' || port === '2096' || port === '8443' ? 'https' : 'http';
+      const protocol = ports443.includes(port) ? 'https' : 'http';
       const formattedIp = isIpv6 ? `[${baseIp}]` : baseIp;
       
       // 使用CloudFlare的trace接口，这会返回实际节点信息
@@ -936,19 +935,38 @@ async function testIpLatency(ip) {
       }
     };
     
-    // 测试所有端口
-    const portResults = [];
-    for (const port of portsToTest) {
+    // 测试80系端口
+    const port80Results = [];
+    for (const port of ports80) {
       try {
         const portResult = await testPort(port);
         if (portResult.success) {
-          portResults.push(portResult);
+          port80Results.push(portResult);
+          result.ports80.push(port); // 记录可用的80系端口
         }
       } catch (e) {
         // 忽略单个端口测试的错误
         console.log(`端口测试错误: ${e.message}`);
       }
     }
+    
+    // 测试443系端口
+    const port443Results = [];
+    for (const port of ports443) {
+      try {
+        const portResult = await testPort(port);
+        if (portResult.success) {
+          port443Results.push(portResult);
+          result.ports443.push(port); // 记录可用的443系端口
+        }
+      } catch (e) {
+        // 忽略单个端口测试的错误
+        console.log(`端口测试错误: ${e.message}`);
+      }
+    }
+    
+    // 合并所有端口结果
+    const portResults = [...port80Results, ...port443Results];
     
     // 处理测试结果
     if (portResults.length > 0) {
@@ -968,22 +986,13 @@ async function testIpLatency(ip) {
         result.colo = bestResult.colo;
       }
       
-      // 如果探测到了实际地区信息，则优先使用它
-      if (bestResult.traceRegion && !geoInfo) {
+      // 如果探测到了实际地区信息，则使用它
+      if (bestResult.traceRegion) {
         result.region = bestResult.traceRegion;
       }
       
-      // 记录可用端口
-      portResults.forEach(r => {
-        if (!result.ports.includes(r.port)) {
-          result.ports.push(r.port);
-        }
-      });
-      
-      console.log(`IP ${baseIp} 测试成功，延迟: ${result.latency.toFixed(2)}ms，区域: ${result.region}` +
-                (result.colo ? `，数据中心: ${result.colo}` : '') +
-                (result.city ? `，城市: ${result.city}` : '') +
-                (result.isp ? `，ISP: ${result.isp}` : ''));
+      console.log(`IP ${baseIp} 测试成功，延迟: ${result.latency.toFixed(2)}ms，数据中心: ${result.colo || '未知'}`);
+      console.log(`80系端口: ${result.ports80.join(', ') || '无'}, 443系端口: ${result.ports443.join(', ') || '无'}`);
     } else {
       console.log(`IP ${baseIp} 测试失败，所有端口都无法连接`);
     }
@@ -1111,28 +1120,11 @@ function displayResults() {
     );
   }
   
-  // 根据选择的区域进行过滤
-  if (selectedRegions.length > 0) {
-    filteredResults = filteredResults.filter(r => selectedRegions.includes(r.region));
-  }
-  
   // 按延迟排序
   filteredResults.sort((a, b) => a.latency - b.latency);
   
-  // 按区域分组
-  const resultsByRegion = {};
-  filteredResults.forEach(result => {
-    if (!resultsByRegion[result.region]) {
-      resultsByRegion[result.region] = [];
-    }
-    resultsByRegion[result.region].push(result);
-  });
-  
-  // 显示所有测试结果，而不仅仅是每个区域的前几个
-  let finalResults = filteredResults;
-  
   // 最终按延迟排序
-  finalResults.sort((a, b) => a.latency - b.latency);
+  let finalResults = filteredResults;
   
   // 添加到表格
   finalResults.forEach(result => {
@@ -1149,26 +1141,8 @@ function displayResults() {
       row.className = 'poor'; // 较差延迟
     }
     
-    // 查找区域信息
-    const regionInfo = CONFIG.regions.find(r => r.id === result.region) || { name: result.region, region: '未知' };
-    
     // 显示IP，保留原始网段信息但用实际测试的IP显示
     const displayIp = result.displayIp || result.ip.split('/')[0];
-    
-    // 生成可用端口列表
-    const ports80 = result.ports ? result.ports.filter(p => 
-        ['80', '8080', '8880', '2052', '2082', '2086', '2095'].includes(p)) : [];
-    const ports443 = result.ports ? result.ports.filter(p => 
-        ['443', '2053', '2083', '2087', '2096', '8443'].includes(p)) : [];
-    
-    // 格式化端口显示
-    let portsHTML = '';
-    if (ports80.length > 0) {
-      portsHTML += `<div>80系: ${ports80.join(', ')}</div>`;
-    }
-    if (ports443.length > 0) {
-      portsHTML += `<div>443系: ${ports443.join(', ')}</div>`;
-    }
     
     // 格式化延迟显示，添加单位
     const formatLatency = (ms) => {
@@ -1198,31 +1172,37 @@ function displayResults() {
       </div>
     `;
     
-    // 添加地理位置信息显示
-    let regionDisplay = regionInfo.name;
-    
-    // 添加API提供的城市和ISP信息
-    if (result.city) {
-      regionDisplay += `<br><small>城市: ${result.city}</small>`;
+    // 格式化80系端口显示
+    let ports80HTML = '';
+    if (result.ports80 && result.ports80.length > 0) {
+      ports80HTML = `<div class="port-group">80系: ${result.ports80.join(', ')}</div>`;
+    } else {
+      ports80HTML = '<div class="port-group"><small>无可用80系端口</small></div>';
     }
     
-    if (result.isp) {
-      regionDisplay += `<br><small>ISP: ${result.isp}</small>`;
+    // 格式化443系端口显示
+    let ports443HTML = '';
+    if (result.ports443 && result.ports443.length > 0) {
+      ports443HTML = `<div class="port-group">443系: ${result.ports443.join(', ')}</div>`;
+    } else {
+      ports443HTML = '<div class="port-group"><small>无可用443系端口</small></div>';
     }
+    
+    // 合并端口信息
+    const portsHTML = `${ports80HTML}${ports443HTML}`;
     
     // 添加数据中心信息
+    let coloHTML = '';
     if (result.colo) {
-      regionDisplay += `<br><small>数据中心: ${result.colo}</small>`;
+      coloHTML = `<div>数据中心: ${result.colo}</div>`;
     }
-    
-    regionDisplay += `<br><small>(${regionInfo.region})</small>`;
     
     row.innerHTML = `
       <td>${displayIp}</td>
       <td><span class="ip-type ${result.isIpv6 ? 'ipv6' : 'ipv4'}">${result.isIpv6 ? 'IPv6' : 'IPv4'}</span></td>
       <td>${latencyDetailHTML}</td>
-      <td>${regionDisplay}</td>
-      <td>${portsHTML || '<small>无可用端口</small>'}</td>
+      <td>${coloHTML}</td>
+      <td>${portsHTML}</td>
     `;
     tbody.appendChild(row);
   });
@@ -1484,65 +1464,74 @@ function createFilters() {
 }
 
 // 生成优化后的IP列表
-function generateOptimizedList(groupedResults, selectedPorts) {
-  let optimizedList = [];
+function generateOptimizedList(data, options) {
+  const { export80, export443 } = options;
+  const { results } = data;
   
-  // 添加文件头信息
-  optimizedList.push(`# CloudFlare IP优选结果`);
-  optimizedList.push(`# 优选时间: ${new Date().toLocaleString()}`);
-  optimizedList.push(`# 最大延迟阈值: ${userMaxLatency}ms`);
-  optimizedList.push(`# 使用IP地理位置API进行精确定位`);
-  optimizedList.push('');
+  // 用户IP信息
+  const userIP = document.getElementById('user-ip').textContent || '未知';
   
-  // 获取主要区域分类
-  const mainRegions = getMainRegions();
+  // 获取当前的延迟阈值
+  const maxLatency = document.getElementById('max-latency').value || 200;
   
-  // 按主要地区组织导出内容
-  mainRegions.forEach(mainRegion => {
-    // 该主要地区下的所有选中国家/地区
-    const regionsInMain = CONFIG.regions.filter(r => r.region === mainRegion);
-    
-    if (regionsInMain.length === 0) return; // 如果该大区没有选中的地区，跳过
-    
-    optimizedList.push(`# ====== ${mainRegion} ======\n`);
-    
-    // 遍历该大区下的所有地区
-    regionsInMain.forEach(region => {
-      const results = groupedResults[region.id] || [];
-      
-      // 如果该区域有结果，则添加
-      if (results && results.length > 0) {
-        optimizedList.push(`# ${region.name} 地区`);
-        
-        // 添加结果 - 使用新格式: IP:端口#国家或地区
-        results.forEach(result => {
-          // 从CIDR格式提取IP
-          const baseIp = result.ip.split('/')[0];
-          // 添加城市和ISP信息
-          const cityInfo = result.city ? ` (${result.city})` : '';
-          const ispInfo = result.isp ? ` - ${result.isp}` : '';
-          
-          // 为每个选中的端口生成一行
-          selectedPorts.forEach(port => {
-            optimizedList.push(`${baseIp}:${port}#${region.name}${cityInfo} # 延迟: ${result.latency.toFixed(2)}ms${ispInfo}`);
-          });
-        });
-        
-        optimizedList.push('');
-      }
-    });
+  let output = [];
+  output.push(`# 优选 Cloudflare CDN IP`);
+  output.push(`# 优选时间: ${new Date().toLocaleString()}`);
+  output.push(`# 本机IP: ${userIP}`);
+  output.push(`# 延迟阈值: ${maxLatency}ms`);
+  output.push('');
+  
+  // 按端口类型分组
+  const port80Results = [];
+  const port443Results = [];
+  
+  results.forEach(result => {
+    if (export80 && result.ports80 && result.ports80.length > 0) {
+      port80Results.push(result);
+    }
+    if (export443 && result.ports443 && result.ports443.length > 0) {
+      port443Results.push(result);
+    }
   });
   
-  // 添加使用说明
-  optimizedList.push(`# 使用说明`);
-  optimizedList.push(`# 1. 这些IP是通过延迟测试优选出来的，可用于CloudFlare CDN加速`);
-  optimizedList.push(`# 2. 不同区域的IP可能有不同的网络路径和稳定性`);
-  optimizedList.push(`# 3. 格式为: IP:端口#国家或地区`);
-  optimizedList.push(`# 4. 地理位置信息由API提供，比延迟估算更准确`);
-  optimizedList.push(`# 5. 建议定期重新优选，以获取最佳体验`);
-  optimizedList.push(`# 6. 由呆萌恐龙优选工具生成`);
+  // 生成80系端口结果
+  if (export80 && port80Results.length > 0) {
+    output.push('# ===== 80系端口 =====');
+    output.push('# 端口: 80、8080、8880、2052、2082、2086、2095');
+    
+    port80Results.forEach(result => {
+      const ports = result.ports80 || [];
+      if (ports.length > 0) {
+        ports.forEach(port => {
+          output.push(`${result.ip}:${port} # 延迟: ${result.latency}ms`);
+        });
+      }
+    });
+    output.push('');
+  }
   
-  return optimizedList.join('\n');
+  // 生成443系端口结果
+  if (export443 && port443Results.length > 0) {
+    output.push('# ===== 443系端口 =====');
+    output.push('# 端口: 443、2053、2083、2087、2096、8443');
+    
+    port443Results.forEach(result => {
+      const ports = result.ports443 || [];
+      if (ports.length > 0) {
+        ports.forEach(port => {
+          output.push(`${result.ip}:${port} # 延迟: ${result.latency}ms`);
+        });
+      }
+    });
+    output.push('');
+  }
+  
+  // 添加使用说明
+  output.push('# ===== 使用说明 =====');
+  output.push('# 以上IP为Cloudflare CDN优选结果，按照延迟从低到高排序');
+  output.push('# 建议根据实际情况选择合适的IP和端口');
+  
+  return output.join('\n');
 }
 
 // 导出测试结果
@@ -1558,10 +1547,8 @@ function exportResults() {
   exportDialog.style.borderRadius = '8px';
   exportDialog.style.boxShadow = '0 0 10px rgba(0,0,0,0.3)';
   exportDialog.style.zIndex = '1000';
-  exportDialog.style.maxWidth = '600px';
+  exportDialog.style.maxWidth = '500px';
   exportDialog.style.width = '90%';
-  exportDialog.style.maxHeight = '80vh';
-  exportDialog.style.overflowY = 'auto';
   
   // 添加标题
   const title = document.createElement('h3');
@@ -1569,226 +1556,46 @@ function exportResults() {
   title.style.marginTop = '0';
   exportDialog.appendChild(title);
   
-  // 创建两列布局
-  const columnsDiv = document.createElement('div');
-  columnsDiv.style.display = 'flex';
-  columnsDiv.style.flexWrap = 'wrap';
-  columnsDiv.style.gap = '20px';
+  // 添加说明
+  const description = document.createElement('p');
+  description.textContent = '选择要导出的端口类型：';
+  exportDialog.appendChild(description);
   
-  // === 地区选择部分 ===
-  const regionColumn = document.createElement('div');
-  regionColumn.style.flex = '1';
-  regionColumn.style.minWidth = '250px';
+  // 端口类型选择
+  const portTypesDiv = document.createElement('div');
+  portTypesDiv.style.margin = '15px 0';
   
-  const regionTitle = document.createElement('h4');
-  regionTitle.textContent = '选择地区';
-  regionTitle.style.marginTop = '0';
-  regionColumn.appendChild(regionTitle);
+  // 80系端口选择
+  const port80Label = document.createElement('label');
+  port80Label.style.display = 'block';
+  port80Label.style.margin = '10px 0';
   
-  // 添加地区全选/取消按钮
-  const regionButtonsDiv = document.createElement('div');
-  regionButtonsDiv.style.display = 'flex';
-  regionButtonsDiv.style.gap = '10px';
-  regionButtonsDiv.style.marginBottom = '10px';
+  const port80Check = document.createElement('input');
+  port80Check.type = 'checkbox';
+  port80Check.id = 'export-port80';
+  port80Check.checked = true;
+  port80Check.style.marginRight = '8px';
   
-  const selectAllRegionsBtn = document.createElement('button');
-  selectAllRegionsBtn.textContent = '全选地区';
-  selectAllRegionsBtn.className = 'btn';
-  selectAllRegionsBtn.style.padding = '5px 10px';
-  selectAllRegionsBtn.style.fontSize = '14px';
+  port80Label.appendChild(port80Check);
+  port80Label.appendChild(document.createTextNode('80系端口 (80、8080、8880、2052、2082、2086、2095)'));
+  portTypesDiv.appendChild(port80Label);
   
-  const deselectAllRegionsBtn = document.createElement('button');
-  deselectAllRegionsBtn.textContent = '取消全选';
-  deselectAllRegionsBtn.className = 'btn';
-  deselectAllRegionsBtn.style.padding = '5px 10px';
-  deselectAllRegionsBtn.style.fontSize = '14px';
-  deselectAllRegionsBtn.style.background = '#ccc';
+  // 443系端口选择
+  const port443Label = document.createElement('label');
+  port443Label.style.display = 'block';
+  port443Label.style.margin = '10px 0';
   
-  regionButtonsDiv.appendChild(selectAllRegionsBtn);
-  regionButtonsDiv.appendChild(deselectAllRegionsBtn);
-  regionColumn.appendChild(regionButtonsDiv);
+  const port443Check = document.createElement('input');
+  port443Check.type = 'checkbox';
+  port443Check.id = 'export-port443';
+  port443Check.checked = true;
+  port443Check.style.marginRight = '8px';
   
-  // 添加地区筛选搜索框
-  const regionSearchDiv = document.createElement('div');
-  regionSearchDiv.style.marginBottom = '10px';
+  port443Label.appendChild(port443Check);
+  port443Label.appendChild(document.createTextNode('443系端口 (443、2053、2083、2087、2096、8443)'));
+  portTypesDiv.appendChild(port443Label);
   
-  const regionSearchInput = document.createElement('input');
-  regionSearchInput.type = 'text';
-  regionSearchInput.placeholder = '搜索地区...';
-  regionSearchInput.style.width = '100%';
-  regionSearchInput.style.padding = '5px';
-  regionSearchInput.style.borderRadius = '4px';
-  regionSearchInput.style.border = '1px solid #ddd';
-  
-  regionSearchDiv.appendChild(regionSearchInput);
-  regionColumn.appendChild(regionSearchDiv);
-  
-  // 地区选择容器
-  const regionsDiv = document.createElement('div');
-  regionsDiv.style.maxHeight = '300px';
-  regionsDiv.style.overflowY = 'auto';
-  regionsDiv.style.border = '1px solid #eee';
-  regionsDiv.style.padding = '10px';
-  regionsDiv.style.borderRadius = '4px';
-  
-  // 按大洲分组显示地区
-  const mainRegions = getMainRegions();
-  const regionsByMain = {};
-  
-  CONFIG.regions.forEach(region => {
-    if (!regionsByMain[region.region]) {
-      regionsByMain[region.region] = [];
-    }
-    regionsByMain[region.region].push(region);
-  });
-  
-  mainRegions.forEach(mainRegion => {
-    const mainRegionDiv = document.createElement('div');
-    mainRegionDiv.style.marginBottom = '15px';
-    
-    const mainRegionTitle = document.createElement('h5');
-    mainRegionTitle.textContent = mainRegion;
-    mainRegionTitle.style.margin = '0 0 5px 0';
-    mainRegionTitle.style.borderBottom = '1px solid #eee';
-    mainRegionTitle.style.paddingBottom = '3px';
-    mainRegionDiv.appendChild(mainRegionTitle);
-    
-    const regionsInMainDiv = document.createElement('div');
-    regionsInMainDiv.style.display = 'flex';
-    regionsInMainDiv.style.flexWrap = 'wrap';
-    regionsInMainDiv.style.gap = '5px';
-    
-    const regions = regionsByMain[mainRegion] || [];
-    regions.forEach(region => {
-      const regionLabel = document.createElement('label');
-      regionLabel.style.display = 'flex';
-      regionLabel.style.alignItems = 'center';
-      regionLabel.style.margin = '3px 10px 3px 0';
-      regionLabel.style.width = 'calc(50% - 10px)';
-      regionLabel.className = 'export-region-option';
-      regionLabel.dataset.region = region.id;
-      regionLabel.dataset.name = region.name;
-      
-      const regionCheck = document.createElement('input');
-      regionCheck.type = 'checkbox';
-      regionCheck.value = region.id;
-      regionCheck.className = 'export-region-checkbox';
-      regionCheck.checked = true; // 默认选中所有地区
-      regionCheck.style.marginRight = '5px';
-      
-      regionLabel.appendChild(regionCheck);
-      regionLabel.appendChild(document.createTextNode(region.name));
-      regionsInMainDiv.appendChild(regionLabel);
-    });
-    
-    mainRegionDiv.appendChild(regionsInMainDiv);
-    regionsDiv.appendChild(mainRegionDiv);
-  });
-  
-  regionColumn.appendChild(regionsDiv);
-  columnsDiv.appendChild(regionColumn);
-  
-  // === 端口选择部分 ===
-  const portColumn = document.createElement('div');
-  portColumn.style.flex = '1';
-  portColumn.style.minWidth = '250px';
-  
-  const portTitle = document.createElement('h4');
-  portTitle.textContent = '选择端口';
-  portTitle.style.marginTop = '0';
-  portColumn.appendChild(portTitle);
-  
-  // 添加端口全选/取消按钮
-  const portButtonsDiv = document.createElement('div');
-  portButtonsDiv.style.display = 'flex';
-  portButtonsDiv.style.gap = '10px';
-  portButtonsDiv.style.marginBottom = '10px';
-  
-  const selectAllPortsBtn = document.createElement('button');
-  selectAllPortsBtn.textContent = '全选端口';
-  selectAllPortsBtn.className = 'btn';
-  selectAllPortsBtn.style.padding = '5px 10px';
-  selectAllPortsBtn.style.fontSize = '14px';
-  
-  const deselectAllPortsBtn = document.createElement('button');
-  deselectAllPortsBtn.textContent = '取消全选';
-  deselectAllPortsBtn.className = 'btn';
-  deselectAllPortsBtn.style.padding = '5px 10px';
-  deselectAllPortsBtn.style.fontSize = '14px';
-  deselectAllPortsBtn.style.background = '#ccc';
-  
-  portButtonsDiv.appendChild(selectAllPortsBtn);
-  portButtonsDiv.appendChild(deselectAllPortsBtn);
-  portColumn.appendChild(portButtonsDiv);
-  
-  // 端口选择容器
-  const portsDiv = document.createElement('div');
-  portsDiv.style.maxHeight = '300px';
-  portsDiv.style.overflowY = 'auto';
-  portsDiv.style.border = '1px solid #eee';
-  portsDiv.style.padding = '10px';
-  portsDiv.style.borderRadius = '4px';
-  
-  // 按组分类端口
-  const portGroups = {};
-  CONFIG.portGroups.forEach(group => {
-    portGroups[group] = [];
-  });
-  
-  // 填充端口组
-  Object.entries(CONFIG.ports).forEach(([port, info]) => {
-    if (info.group && portGroups[info.group]) {
-      portGroups[info.group].push({
-        port: port,
-        name: info.name,
-        default: true // 所有端口默认选中
-      });
-    }
-  });
-  
-  // 创建端口选择UI
-  Object.entries(portGroups).forEach(([group, ports]) => {
-    const groupDiv = document.createElement('div');
-    groupDiv.style.marginBottom = '15px';
-    
-    const groupTitle = document.createElement('h5');
-    groupTitle.textContent = group;
-    groupTitle.style.margin = '0 0 5px 0';
-    groupTitle.style.borderBottom = '1px solid #eee';
-    groupTitle.style.paddingBottom = '3px';
-    groupDiv.appendChild(groupTitle);
-    
-    const portsInGroupDiv = document.createElement('div');
-    portsInGroupDiv.style.display = 'flex';
-    portsInGroupDiv.style.flexWrap = 'wrap';
-    portsInGroupDiv.style.gap = '5px';
-    
-    ports.forEach(portInfo => {
-      const portLabel = document.createElement('label');
-      portLabel.style.display = 'flex';
-      portLabel.style.alignItems = 'center';
-      portLabel.style.margin = '3px 10px 3px 0';
-      portLabel.style.width = 'calc(50% - 10px)';
-      
-      const portCheck = document.createElement('input');
-      portCheck.type = 'checkbox';
-      portCheck.value = portInfo.port;
-      portCheck.className = 'export-port-checkbox';
-      portCheck.checked = portInfo.default;
-      portCheck.style.marginRight = '5px';
-      
-      portLabel.appendChild(portCheck);
-      portLabel.appendChild(document.createTextNode(portInfo.port));
-      portsInGroupDiv.appendChild(portLabel);
-    });
-    
-    groupDiv.appendChild(portsInGroupDiv);
-    portsDiv.appendChild(groupDiv);
-  });
-  
-  portColumn.appendChild(portsDiv);
-  columnsDiv.appendChild(portColumn);
-  exportDialog.appendChild(columnsDiv);
+  exportDialog.appendChild(portTypesDiv);
   
   // 添加按钮
   const buttonDiv = document.createElement('div');
@@ -1810,33 +1617,16 @@ function exportResults() {
   confirmBtn.textContent = '导出';
   confirmBtn.className = 'btn';
   confirmBtn.addEventListener('click', () => {
-    // 获取选中的端口
-    const selectedPorts = [];
-    exportDialog.querySelectorAll('.export-port-checkbox:checked').forEach(checkbox => {
-      selectedPorts.push(checkbox.value);
-    });
+    // 获取选中的端口类型
+    const export80 = document.getElementById('export-port80').checked;
+    const export443 = document.getElementById('export-port443').checked;
     
-    // 获取选中的地区
-    const selectedRegions = [];
-    exportDialog.querySelectorAll('.export-region-checkbox:checked').forEach(checkbox => {
-      selectedRegions.push(checkbox.value);
-    });
-    
-    // 如果没有选择端口，默认使用443
-    if (selectedPorts.length === 0) {
-      selectedPorts.push('443');
-    }
-    
-    // 如果没有选择地区，提示用户
-    if (selectedRegions.length === 0) {
-      alert('请至少选择一个地区');
+    if (!export80 && !export443) {
+      alert('请至少选择一种端口类型');
       return;
     }
     
-    // 按区域分组结果
-    const groupedResults = {};
-    
-    // 根据筛选条件过滤结果
+    // 过滤并排序结果
     let filteredResults = testResults.filter(r => r.status === 'success');
     
     // 根据选择的IP类型进行过滤
@@ -1847,26 +1637,20 @@ function exportResults() {
       );
     }
     
-    // 根据选择的区域进行过滤
-    if (selectedRegions.length > 0) {
-      filteredResults = filteredResults.filter(r => selectedRegions.includes(r.region));
-    }
+    // 按延迟排序
+    filteredResults.sort((a, b) => a.latency - b.latency);
     
-    // 按区域分组并按延迟排序
-    filteredResults.forEach(result => {
-      if (!groupedResults[result.region]) {
-        groupedResults[result.region] = [];
-      }
-      groupedResults[result.region].push(result);
-    });
+    // 按端口类型分组
+    const groupedResults = {};
     
-    // 对每个区域内的IP按延迟排序
-    Object.keys(groupedResults).forEach(region => {
-      groupedResults[region].sort((a, b) => a.latency - b.latency);
-    });
+    // 只保留有选中端口类型的结果
+    filteredResults = filteredResults.filter(r => 
+      (export80 && r.ports80 && r.ports80.length > 0) || 
+      (export443 && r.ports443 && r.ports443.length > 0)
+    );
     
     // 生成导出内容
-    const exportContent = generateOptimizedList(groupedResults, selectedPorts);
+    const exportContent = generateOptimizedList({ results: filteredResults }, { export80, export443 });
     
     // 创建下载链接
     const blob = new Blob([exportContent], { type: 'text/plain' });
@@ -1885,47 +1669,6 @@ function exportResults() {
   buttonDiv.appendChild(cancelBtn);
   buttonDiv.appendChild(confirmBtn);
   exportDialog.appendChild(buttonDiv);
-  
-  // 绑定地区搜索功能
-  regionSearchInput.addEventListener('input', function() {
-    const searchText = this.value.toLowerCase();
-    exportDialog.querySelectorAll('.export-region-option').forEach(option => {
-      const regionName = option.dataset.name.toLowerCase();
-      const regionId = option.dataset.region.toLowerCase();
-      
-      if (searchText === '' || regionName.includes(searchText) || regionId.includes(searchText)) {
-        option.style.display = '';
-      } else {
-        option.style.display = 'none';
-      }
-    });
-  });
-  
-  // 绑定地区全选/取消按钮
-  selectAllRegionsBtn.addEventListener('click', () => {
-    exportDialog.querySelectorAll('.export-region-checkbox').forEach(checkbox => {
-      checkbox.checked = true;
-    });
-  });
-  
-  deselectAllRegionsBtn.addEventListener('click', () => {
-    exportDialog.querySelectorAll('.export-region-checkbox').forEach(checkbox => {
-      checkbox.checked = false;
-    });
-  });
-  
-  // 绑定端口全选/取消按钮
-  selectAllPortsBtn.addEventListener('click', () => {
-    exportDialog.querySelectorAll('.export-port-checkbox').forEach(checkbox => {
-      checkbox.checked = true;
-    });
-  });
-  
-  deselectAllPortsBtn.addEventListener('click', () => {
-    exportDialog.querySelectorAll('.export-port-checkbox').forEach(checkbox => {
-      checkbox.checked = false;
-    });
-  });
   
   // 添加遮罩层
   const overlay = document.createElement('div');
@@ -2022,3 +1765,20 @@ async function getIpGeoLocationWithCache(ip) {
   
   return geoInfo;
 }
+
+// 添加导出按钮事件监听
+document.getElementById('export-results').addEventListener('click', function() {
+  if (testResults.length === 0) {
+    showMessage('没有可导出的测试结果', 'error');
+    return;
+  }
+  
+  // 过滤成功的结果
+  const successResults = testResults.filter(r => r.status === 'success');
+  if (successResults.length === 0) {
+    showMessage('没有可导出的成功测试结果', 'error');
+    return;
+  }
+  
+  exportResults();
+});

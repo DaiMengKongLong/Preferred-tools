@@ -13,7 +13,6 @@ let selectedIPTypes = ['ipv4', 'ipv6']; // 选中的IP类型
 let selectedPorts = []; // 选中的端口
 let userIP = ''; // 用户的IP地址
 let userIsIPv6 = false; // 用户是否使用IPv6
-let isLightMode = false; // 是否使用轻量模式
 
 // 用户可配置参数
 let userMaxLatency = 200; // 默认最大可接受延迟(ms)
@@ -33,12 +32,6 @@ const CONFIG = {
   topCount: 5,           // 每个国家优质IP选取数量
   testUrl: 'https://api.ipify.org', // 用于IP测试的URL
   testMethod: 'CONNECT', // 使用CONNECT方法进行TCP连通性测试
-  // 备用测试URL，当主URL失败时尝试
-  backupTestUrls: [
-    'https://www.cloudflare.com/cdn-cgi/trace', 
-    'https://1.1.1.1/cdn-cgi/trace', 
-    'https://1.0.0.1/cdn-cgi/trace'
-  ],
   // IP类型定义
   ipTypes: [
     {id: 'ipv4', name: 'IPv4'},
@@ -317,32 +310,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // 默认选中所有IP类型
   selectedIPTypes = CONFIG.ipTypes.map(type => type.id);
   
-  // 添加每区域IP数量设置
-  const settingsContainer = document.querySelector('.settings');
-  if (settingsContainer) {
-    // 找到测试IP数量的设置项
-    const maxIpCountItem = Array.from(settingsContainer.querySelectorAll('.setting-item')).find(
-      item => item.querySelector('label').getAttribute('for') === 'max-ip-count'
-    );
-    
-    if (maxIpCountItem) {
-      // 创建新的设置项
-      const regionIpCountItem = document.createElement('div');
-      regionIpCountItem.className = 'setting-item';
-      regionIpCountItem.innerHTML = `
-        <label for="region-ip-count">每区域IP数量:</label>
-        <input type="number" id="region-ip-count" min="5" max="50" value="${CONFIG.topCount}" placeholder="默认${CONFIG.topCount}个">
-      `;
-      
-      // 插入到测试IP数量设置后面
-      if (maxIpCountItem.nextSibling) {
-        settingsContainer.insertBefore(regionIpCountItem, maxIpCountItem.nextSibling);
-      } else {
-        settingsContainer.appendChild(regionIpCountItem);
-      }
-    }
-  }
-  
   // 获取用户设置的延迟阈值
   const latencyInput = document.getElementById('max-latency');
   if (latencyInput) {
@@ -356,27 +323,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   
-  // 获取用户设置的测试IP数量
-  const ipCountInput = document.getElementById('max-ip-count');
-  if (ipCountInput) {
-    ipCountInput.addEventListener('change', () => {
-      const value = parseInt(ipCountInput.value);
-      if (!isNaN(value) && value > 0) {
-        userMaxTestIPs = value;
-      } else {
-        ipCountInput.value = userMaxTestIPs;
-      }
-    });
-  }
-  
-  // 获取用户设置的每区域IP数量
-  const regionIpCountInput = document.getElementById('region-ip-count');
-  if (regionIpCountInput && regionIpCountInput.value) {
-    const value = parseInt(regionIpCountInput.value);
-    if (!isNaN(value) && value >= 5 && value <= 50) {
-      CONFIG.topCount = value;
-    }
-  }
+  // 设置测试所有IP，不限制数量
+  userMaxTestIPs = Number.MAX_SAFE_INTEGER;
+  CONFIG.topCount = Number.MAX_SAFE_INTEGER;
   
   // 创建筛选器
   createFilters();
@@ -585,17 +534,11 @@ async function startTest() {
       testList = testList.concat(ipv6List);
     }
     
-    // 随机打乱IP列表并选取部分
-    const shuffled = testList.sort(() => 0.5 - Math.random());
-    
-    // 根据用户设置选取测试数量
-    const sampleSize = Math.min(shuffled.length, userMaxTestIPs);
-    testList = shuffled.slice(0, sampleSize);
-    
+    // 测试所有IP，不再限制数量
     totalIps = testList.length;
     updateStatus(`开始测试 ${totalIps} 个IP地址...`);
     
-    // 调用测试函数，执行批量测试
+    // 调用测试函数，执行测试
     const results = await batchTestIps(testList);
     testResults = results;
     
@@ -748,61 +691,41 @@ async function batchTestIps(ipList) {
   // 初始化进度
   updateProgress(0, totalIps);
   
-  // 分批测试IP列表
-  const batches = [];
-  for (let i = 0; i < ipList.length; i += batchSize) {
-    batches.push(ipList.slice(i, i + batchSize));
+  // 直接测试所有IP，不再分批
+  // 创建并发测试的Promise数组
+  const promises = [];
+  const maxConcurrent = CONFIG.concurrentTests;
+  let activePromises = 0;
+  let index = 0;
+  
+  // 处理单个IP测试完成的回调
+  const handleCompletion = (result) => {
+    completedCount++;
+    if (result.status !== 'success') {
+      failureCount++;
+    }
+    results.push(result);
+    updateProgress(completedCount, totalIps, failureCount);
+    activePromises--;
+    
+    // 如果还有IP需要测试，继续添加新的测试任务
+    if (index < ipList.length && isTestRunning) {
+      const ip = ipList[index++];
+      activePromises++;
+      testIpLatency(ip).then(handleCompletion);
+    }
+  };
+  
+  // 初始化第一批测试任务
+  while (index < ipList.length && activePromises < maxConcurrent && isTestRunning) {
+    const ip = ipList[index++];
+    activePromises++;
+    testIpLatency(ip).then(handleCompletion);
   }
   
-  // 处理每个批次
-  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-    const batch = batches[batchIndex];
-    updateStatus(`正在测试批次 ${batchIndex + 1}/${batches.length} (${batch.length}个IP)...`);
-    
-    // 创建并发测试的Promise数组
-    const batchPromises = [];
-    for (let i = 0; i < batch.length && isTestRunning; i++) {
-      const ip = batch[i];
-      
-      // 最多并发CONFIG.concurrentTests个请求
-      if (batchPromises.length >= CONFIG.concurrentTests) {
-        const result = await Promise.race(batchPromises.map(p => p.promise));
-        const index = batchPromises.findIndex(p => p.promise === result.promise);
-        if (index !== -1) {
-          batchPromises.splice(index, 1);
-        }
-      }
-      
-      // 创建一个Promise并添加到数组中
-      const promise = testIpLatency(ip).then(result => {
-        completedCount++;
-        if (result.status !== 'success') {
-          failureCount++;
-        }
-        results.push(result);
-        updateProgress(completedCount, totalIps, failureCount);
-        return { promise, completed: true };
-      });
-      
-      batchPromises.push({ promise, ip });
-    }
-    
-    // 等待当前批次的所有测试完成
-    if (batchPromises.length > 0) {
-      await Promise.all(batchPromises.map(p => p.promise));
-    }
-    
-    // 如果测试已停止，则退出循环
-    if (!isTestRunning) {
-      updateStatus('测试已停止');
-      break;
-    }
-    
-    // 批次间延迟，避免浏览器卡顿
-    if (batchIndex < batches.length - 1) {
-      updateStatus(`批次 ${batchIndex + 1} 完成，暂停 ${batchDelay/1000} 秒后继续...`);
-      await new Promise(resolve => setTimeout(resolve, batchDelay));
-    }
+  // 等待所有测试完成
+  while (activePromises > 0 && isTestRunning) {
+    await new Promise(resolve => setTimeout(resolve, 100));
   }
   
   updateStatus(`测试完成: 共测试 ${completedCount} 个IP，成功率 ${((completedCount - failureCount) / completedCount * 100).toFixed(1)}%`);
@@ -811,32 +734,40 @@ async function batchTestIps(ipList) {
 
 // 测试单个IP的延迟
 async function testIpLatency(ip) {
-  // 从CIDR格式提取IP，并生成真实IP地址
+  // 从CIDR格式提取IP
   const baseIp = ip.split('/')[0];
   const isIpv6 = baseIp.includes(':');
-  
-  // 创建格式正确的IP地址
-  let realIp = baseIp;
   
   // 测试结果对象
   const result = {
     ip: ip, // 保留原始IP格式，包括网段
-    displayIp: realIp, // 显示用的IP地址
+    displayIp: baseIp, // 显示用的IP地址
     isIpv6: isIpv6,
     latency: 9999,
     tcpLatency: 9999,
     httpLatency: 9999,
     totalLatency: 9999,
     region: 'unknown',
+    country: 'unknown',
+    city: '',
+    isp: '',
     status: 'timeout',
     ports: [], // 记录可用的端口
     colo: '', // CloudFlare的数据中心代码
-    actualRegion: '', // 根据实际内容探测的地区
   };
   
   try {
     // 调试信息
-    console.log(`开始测试IP: ${realIp}`);
+    console.log(`开始测试IP: ${baseIp}`);
+    
+    // 获取IP地理位置信息
+    const geoInfo = await getIpGeoLocationWithCache(baseIp);
+    if (geoInfo) {
+      result.region = geoInfo.country;
+      result.country = geoInfo.country;
+      result.city = geoInfo.city;
+      result.isp = geoInfo.isp;
+    }
     
     // 多次测试取平均值
     let totalLatency = 0;
@@ -853,7 +784,7 @@ async function testIpLatency(ip) {
       // 构建URL
       const protocol = port === '443' || port === '2053' || port === '2083' || 
                       port === '2087' || port === '2096' || port === '8443' ? 'https' : 'http';
-      const formattedIp = isIpv6 ? `[${realIp}]` : realIp;
+      const formattedIp = isIpv6 ? `[${baseIp}]` : baseIp;
       
       // 使用CloudFlare的trace接口，这会返回实际节点信息
       const url = `${protocol}://${formattedIp}:${port}/cdn-cgi/trace`;
@@ -940,12 +871,12 @@ async function testIpLatency(ip) {
           xhr.send();
         });
         
-        console.log(`IP ${realIp} 端口 ${port} 测试成功 (XHR)，延迟: ${result.latency.toFixed(2)}ms` + 
+        console.log(`IP ${baseIp} 端口 ${port} 测试成功 (XHR)，延迟: ${result.latency.toFixed(2)}ms` + 
                    (result.colo ? `，数据中心: ${result.colo}` : '') + 
                    (result.traceRegion ? `，实际地区: ${result.traceRegion}` : ''));
         return result;
       } catch (xhrError) {
-        console.log(`IP ${realIp} 端口 ${port} XHR测试失败，尝试fetch方法: ${xhrError.message}`);
+        console.log(`IP ${baseIp} 端口 ${port} XHR测试失败，尝试fetch方法: ${xhrError.message}`);
         
         // 如果XHR失败，尝试使用fetch
         try {
@@ -969,7 +900,7 @@ async function testIpLatency(ip) {
           const endTime = performance.now();
           const latency = endTime - fetchStartTime;
           
-          console.log(`IP ${realIp} 端口 ${port} 测试成功 (fetch)，延迟: ${latency.toFixed(2)}ms`);
+          console.log(`IP ${baseIp} 端口 ${port} 测试成功 (fetch)，延迟: ${latency.toFixed(2)}ms`);
           return {
             success: true,
             port: port,
@@ -984,7 +915,7 @@ async function testIpLatency(ip) {
           
           // 只有延迟在合理范围内才算成功
           if (latency >= 5 && latency <= userMaxLatency * 2) {
-            console.log(`IP ${realIp} 端口 ${port} 测试部分成功（可接受的错误），延迟: ${latency.toFixed(2)}ms`);
+            console.log(`IP ${baseIp} 端口 ${port} 测试部分成功（可接受的错误），延迟: ${latency.toFixed(2)}ms`);
             return {
               success: true,
               port: port,
@@ -995,7 +926,7 @@ async function testIpLatency(ip) {
             };
           }
           
-          console.log(`IP ${realIp} 端口 ${port} 测试完全失败，错误: ${fetchError.message}`);
+          console.log(`IP ${baseIp} 端口 ${port} 测试完全失败，错误: ${fetchError.message}`);
           return {
             success: false,
             port: port,
@@ -1038,59 +969,8 @@ async function testIpLatency(ip) {
       }
       
       // 如果探测到了实际地区信息，则优先使用它
-      if (bestResult.traceRegion) {
-        result.actualRegion = bestResult.traceRegion;
-        // 使用实际探测到的地区作为结果
+      if (bestResult.traceRegion && !geoInfo) {
         result.region = bestResult.traceRegion;
-      } else {
-        // 如果没有探测到，则使用基于延迟的估算
-        // 根据延迟综合评估地理位置
-        const avgLatency = result.latency;
-        const latencyFactor = userMaxLatency / 200; // 根据用户设置的延迟阈值调整区域判断标准
-        
-        // 亚洲区域 (基于传播距离估算) - 放宽判断条件以提高成功率
-        if (avgLatency < 50 * latencyFactor) result.region = 'cn'; // 中国大陆
-        else if (avgLatency < 80 * latencyFactor) result.region = 'hk'; // 香港
-        else if (avgLatency < 100 * latencyFactor) result.region = 'tw'; // 台湾
-        else if (avgLatency < 120 * latencyFactor) result.region = 'jp'; // 日本
-        else if (avgLatency < 140 * latencyFactor) result.region = 'kr'; // 韩国
-        else if (avgLatency < 160 * latencyFactor) result.region = 'sg'; // 新加坡
-        else if (avgLatency < 180 * latencyFactor) result.region = 'my'; // 马来西亚
-        else if (avgLatency < 200 * latencyFactor) result.region = 'th'; // 泰国
-        else if (avgLatency < 220 * latencyFactor) result.region = 'vn'; // 越南
-        else if (avgLatency < 240 * latencyFactor) result.region = 'ph'; // 菲律宾
-        else if (avgLatency < 260 * latencyFactor) result.region = 'in'; // 印度
-        // 大洋洲
-        else if (avgLatency < 280 * latencyFactor) result.region = 'au'; // 澳大利亚
-        else if (avgLatency < 300 * latencyFactor) result.region = 'nz'; // 新西兰
-        // 中东地区
-        else if (avgLatency < 320 * latencyFactor) result.region = 'ae'; // 阿联酋
-        // 欧洲区域
-        else if (avgLatency < 340 * latencyFactor) result.region = 'ru'; // 俄罗斯
-        else if (avgLatency < 360 * latencyFactor) result.region = 'tr'; // 土耳其
-        else if (avgLatency < 380 * latencyFactor) result.region = 'uk'; // 英国
-        else if (avgLatency < 400 * latencyFactor) result.region = 'fr'; // 法国
-        else if (avgLatency < 420 * latencyFactor) result.region = 'de'; // 德国
-        else if (avgLatency < 440 * latencyFactor) result.region = 'nl'; // 荷兰
-        else if (avgLatency < 460 * latencyFactor) result.region = 'it'; // 意大利
-        else if (avgLatency < 480 * latencyFactor) result.region = 'es'; // 西班牙
-        // 北美区域
-        else if (avgLatency < 500 * latencyFactor) result.region = 'us'; // 美国
-        else if (avgLatency < 520 * latencyFactor) result.region = 'ca'; // 加拿大
-        else if (avgLatency < 540 * latencyFactor) result.region = 'mx'; // 墨西哥
-        // 南美洲
-        else if (avgLatency < 560 * latencyFactor) result.region = 'br'; // 巴西
-        else if (avgLatency < 580 * latencyFactor) result.region = 'ar'; // 阿根廷
-        else if (avgLatency < 600 * latencyFactor) result.region = 'cl'; // 智利
-        // 非洲
-        else if (avgLatency < 620 * latencyFactor) result.region = 'za'; // 南非
-        else if (avgLatency < 640 * latencyFactor) result.region = 'eg'; // 埃及
-        else if (avgLatency < 660 * latencyFactor) result.region = 'ng'; // 尼日利亚
-        else result.region = 'unknown'; // 未知区域
-        
-        console.log(`IP ${realIp} 测试成功，延迟: ${result.latency.toFixed(2)}ms，区域: ${result.region}` +
-                   (result.colo ? `，数据中心: ${result.colo}` : '') +
-                   (result.actualRegion ? `，实际地区: ${result.actualRegion}` : ''));
       }
       
       // 记录可用端口
@@ -1099,11 +979,16 @@ async function testIpLatency(ip) {
           result.ports.push(r.port);
         }
       });
+      
+      console.log(`IP ${baseIp} 测试成功，延迟: ${result.latency.toFixed(2)}ms，区域: ${result.region}` +
+                (result.colo ? `，数据中心: ${result.colo}` : '') +
+                (result.city ? `，城市: ${result.city}` : '') +
+                (result.isp ? `，ISP: ${result.isp}` : ''));
     } else {
-      console.log(`IP ${realIp} 测试失败，所有端口都无法连接`);
+      console.log(`IP ${baseIp} 测试失败，所有端口都无法连接`);
     }
   } catch (error) {
-    console.log(`IP ${realIp} 测试出错: ${error.message}`);
+    console.log(`IP ${baseIp} 测试出错: ${error.message}`);
   }
   
   return result;
@@ -1313,11 +1198,23 @@ function displayResults() {
       </div>
     `;
     
-    // 添加数据中心信息显示
+    // 添加地理位置信息显示
     let regionDisplay = regionInfo.name;
+    
+    // 添加API提供的城市和ISP信息
+    if (result.city) {
+      regionDisplay += `<br><small>城市: ${result.city}</small>`;
+    }
+    
+    if (result.isp) {
+      regionDisplay += `<br><small>ISP: ${result.isp}</small>`;
+    }
+    
+    // 添加数据中心信息
     if (result.colo) {
       regionDisplay += `<br><small>数据中心: ${result.colo}</small>`;
     }
+    
     regionDisplay += `<br><small>(${regionInfo.region})</small>`;
     
     row.innerHTML = `
@@ -1584,6 +1481,68 @@ function createFilters() {
       }
     });
   });
+}
+
+// 生成优化后的IP列表
+function generateOptimizedList(groupedResults, selectedPorts) {
+  let optimizedList = [];
+  
+  // 添加文件头信息
+  optimizedList.push(`# CloudFlare IP优选结果`);
+  optimizedList.push(`# 优选时间: ${new Date().toLocaleString()}`);
+  optimizedList.push(`# 最大延迟阈值: ${userMaxLatency}ms`);
+  optimizedList.push(`# 使用IP地理位置API进行精确定位`);
+  optimizedList.push('');
+  
+  // 获取主要区域分类
+  const mainRegions = getMainRegions();
+  
+  // 按主要地区组织导出内容
+  mainRegions.forEach(mainRegion => {
+    // 该主要地区下的所有选中国家/地区
+    const regionsInMain = CONFIG.regions.filter(r => r.region === mainRegion);
+    
+    if (regionsInMain.length === 0) return; // 如果该大区没有选中的地区，跳过
+    
+    optimizedList.push(`# ====== ${mainRegion} ======\n`);
+    
+    // 遍历该大区下的所有地区
+    regionsInMain.forEach(region => {
+      const results = groupedResults[region.id] || [];
+      
+      // 如果该区域有结果，则添加
+      if (results && results.length > 0) {
+        optimizedList.push(`# ${region.name} 地区`);
+        
+        // 添加结果 - 使用新格式: IP:端口#国家或地区
+        results.forEach(result => {
+          // 从CIDR格式提取IP
+          const baseIp = result.ip.split('/')[0];
+          // 添加城市和ISP信息
+          const cityInfo = result.city ? ` (${result.city})` : '';
+          const ispInfo = result.isp ? ` - ${result.isp}` : '';
+          
+          // 为每个选中的端口生成一行
+          selectedPorts.forEach(port => {
+            optimizedList.push(`${baseIp}:${port}#${region.name}${cityInfo} # 延迟: ${result.latency.toFixed(2)}ms${ispInfo}`);
+          });
+        });
+        
+        optimizedList.push('');
+      }
+    });
+  });
+  
+  // 添加使用说明
+  optimizedList.push(`# 使用说明`);
+  optimizedList.push(`# 1. 这些IP是通过延迟测试优选出来的，可用于CloudFlare CDN加速`);
+  optimizedList.push(`# 2. 不同区域的IP可能有不同的网络路径和稳定性`);
+  optimizedList.push(`# 3. 格式为: IP:端口#国家或地区`);
+  optimizedList.push(`# 4. 地理位置信息由API提供，比延迟估算更准确`);
+  optimizedList.push(`# 5. 建议定期重新优选，以获取最佳体验`);
+  optimizedList.push(`# 6. 由呆萌恐龙优选工具生成`);
+  
+  return optimizedList.join('\n');
 }
 
 // 导出测试结果
@@ -1876,15 +1835,6 @@ function exportResults() {
     
     // 按区域分组结果
     const groupedResults = {};
-    const mainRegions = getMainRegions(); // 获取主要地区分类
-    
-    // 初始化每个地区的结果数组
-    CONFIG.regions.forEach(region => {
-      if (!groupedResults[region.region]) {
-        groupedResults[region.region] = {};
-      }
-      groupedResults[region.region][region.id] = [];
-    });
     
     // 根据筛选条件过滤结果
     let filteredResults = testResults.filter(r => r.status === 'success');
@@ -1903,78 +1853,20 @@ function exportResults() {
     }
     
     // 按区域分组并按延迟排序
-    const resultsByRegion = {};
     filteredResults.forEach(result => {
-      if (!resultsByRegion[result.region]) {
-        resultsByRegion[result.region] = [];
+      if (!groupedResults[result.region]) {
+        groupedResults[result.region] = [];
       }
-      resultsByRegion[result.region].push(result);
+      groupedResults[result.region].push(result);
     });
     
-    // 对每个区域选择最优的IP并分配到对应区域
-    Object.entries(resultsByRegion).forEach(([regionId, results]) => {
-      // 按延迟排序
-      results.sort((a, b) => a.latency - b.latency);
-      
-      // 获取该地区最优的IP
-      const topIPs = results.slice(0, CONFIG.topCount);
-      
-      // 找到区域所属的主区域
-      const region = CONFIG.regions.find(r => r.id === regionId);
-      if (region) {
-        groupedResults[region.region][regionId] = topIPs;
-      }
+    // 对每个区域内的IP按延迟排序
+    Object.keys(groupedResults).forEach(region => {
+      groupedResults[region].sort((a, b) => a.latency - b.latency);
     });
     
     // 生成导出内容
-    let exportContent = '';
-    
-    // 添加文件头信息
-    exportContent += `# CloudFlare IP优选结果\n`;
-    exportContent += `# 优选时间: ${new Date().toLocaleString()}\n`;
-    exportContent += `# 延迟阈值: ${userMaxLatency}ms\n`;
-    exportContent += `# 每个国家/地区选取 ${CONFIG.topCount} 个最优IP\n\n`;
-    
-    // 按主要地区组织导出内容
-    mainRegions.forEach(mainRegion => {
-      // 检查这个大区是否有选中的地区
-      const regionsInMain = CONFIG.regions.filter(r => r.region === mainRegion && selectedRegions.includes(r.id));
-      
-      if (regionsInMain.length === 0) return; // 如果该大区没有选中的地区，跳过
-      
-      exportContent += `# ====== ${mainRegion} ======\n\n`;
-      
-      // 该主要地区下的所有选中国家/地区
-      regionsInMain.forEach(region => {
-        const results = groupedResults[mainRegion][region.id];
-        
-        // 如果该区域有结果，则添加
-        if (results && results.length > 0) {
-          exportContent += `# ${region.name} 地区\n`;
-          
-          // 添加结果 - 使用新格式: IP:端口#国家或地区
-          results.forEach(result => {
-            // 从CIDR格式提取IP
-            const baseIp = result.ip.split('/')[0];
-            // 为每个选中的端口生成一行
-            selectedPorts.forEach(port => {
-              exportContent += `${baseIp}:${port}#${region.name}\n`;
-            });
-          });
-          
-          exportContent += '\n';
-        }
-      });
-    });
-    
-    // 添加使用说明
-    exportContent += `# 使用说明\n`;
-    exportContent += `# 1. 这些IP是通过延迟测试优选出来的，可用于CloudFlare CDN加速\n`;
-    exportContent += `# 2. 不同区域的IP可能有不同的网络路径和稳定性\n`;
-    exportContent += `# 3. 每个国家/地区选取 ${CONFIG.topCount} 个最优IP\n`;
-    exportContent += `# 4. 格式为: IP:端口#国家或地区\n`;
-    exportContent += `# 5. 建议定期重新优选，以获取最佳体验\n`;
-    exportContent += `# 6. 由呆萌恐龙优选工具生成\n`;
+    const exportContent = generateOptimizedList(groupedResults, selectedPorts);
     
     // 创建下载链接
     const blob = new Blob([exportContent], { type: 'text/plain' });
@@ -2068,41 +1960,65 @@ function getUserConfig() {
     }
   }
   
-  // 获取用户设置的测试IP数量
-  const ipCountInput = document.getElementById('max-ip-count');
-  if (ipCountInput) {
-    const value = parseInt(ipCountInput.value);
-    if (!isNaN(value) && value > 0) {
-      userMaxTestIPs = value;
-    }
-  }
+  // 设置测试IP数量为无限
+  userMaxTestIPs = Number.MAX_SAFE_INTEGER;
   
-  // 获取用户设置的每区域IP数量
-  const regionIpCountInput = document.getElementById('region-ip-count');
-  if (regionIpCountInput) {
-    const value = parseInt(regionIpCountInput.value);
-    if (!isNaN(value) && value >= 5 && value <= 50) {
-      CONFIG.topCount = value;
-    }
-  }
+  // 设置每区域IP数量为无限
+  CONFIG.topCount = Number.MAX_SAFE_INTEGER;
   
-  // 获取是否使用轻量模式
-  const lightModeCheckbox = document.getElementById('light-mode');
-  if (lightModeCheckbox) {
-    isLightMode = lightModeCheckbox.checked;
-    
-    // 轻量模式下自动调整参数
-    if (isLightMode) {
-      userMaxTestIPs = Math.min(userMaxTestIPs, 100); // 最多测试100个IP
-      batchSize = 20; // 减小批次大小
-      batchDelay = 1500; // 增加批次间隔
+  // 删除轻量模式相关代码
+  
+  console.log(`用户配置: 最大延迟=${userMaxLatency}ms, 测试所有IP, 每区域显示所有IP`);
+}
+
+// 添加IP地理位置查询函数
+async function getIpGeoLocation(ip) {
+  try {
+    // 使用ipapi.co的免费API (有请求频率限制)
+    const response = await fetch(`https://ipapi.co/${ip}/json/`);
+    if (response.ok) {
+      const data = await response.json();
       
-      // 如果IP数量输入框存在，更新其值
-      if (ipCountInput) {
-        ipCountInput.value = userMaxTestIPs;
+      // 检查API是否返回错误
+      if (data.error) {
+        console.log(`IP地理位置查询错误: ${data.reason || '未知错误'}`);
+        return null;
       }
+      
+      return {
+        country: data.country_code?.toLowerCase() || 'unknown',
+        region: data.region_code || '',
+        city: data.city || '',
+        isp: data.org || '',
+        latitude: data.latitude,
+        longitude: data.longitude
+      };
     }
+    
+    console.log(`IP地理位置查询失败: HTTP ${response.status}`);
+    return null;
+  } catch (error) {
+    console.error('IP地理位置查询出错:', error);
+    return null;
+  }
+}
+
+// 简单的IP地理位置缓存
+const geoCache = {};
+
+async function getIpGeoLocationWithCache(ip) {
+  // 检查缓存
+  if (geoCache[ip]) {
+    return geoCache[ip];
   }
   
-  console.log(`用户配置: 最大延迟=${userMaxLatency}ms, 测试IP数量=${userMaxTestIPs}, 每区域IP数量=${CONFIG.topCount}, 轻量模式=${isLightMode}`);
+  // 获取地理位置
+  const geoInfo = await getIpGeoLocation(ip);
+  
+  // 存入缓存
+  if (geoInfo) {
+    geoCache[ip] = geoInfo;
+  }
+  
+  return geoInfo;
 }

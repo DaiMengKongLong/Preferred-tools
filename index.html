@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>🦭呆萌恐龙🦭优选工具</title>
-  <meta name="description" content="优选CloudFlare CDN的IP地址，获取最佳网络体验，由呆萌恐龙提供">
+  <meta name="description" content="优选CloudFlare CDN的IP地址，测试所有IP以获取最佳网络体验，由呆萌恐龙提供">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>">
   <style>
     /* 基础样式 */
@@ -672,12 +672,45 @@
       color: #0066cc;
       font-weight: 500;
     }
+    
+    /* 添加可隐藏的使用说明区域 */
+    .help-container {
+      margin-bottom: 20px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.05), 0 1px 5px rgba(0,0,0,0.03);
+      padding: 15px;
+    }
+    
+    .help-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .help-header h2 {
+      margin: 0;
+      font-size: 1.2rem;
+    }
+    
+    .toggle-btn {
+      padding: 5px 10px;
+      font-size: 14px;
+    }
+    
+    .help-content {
+      margin-top: 10px;
+    }
+    
+    .help-content ul {
+      padding-left: 20px;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>🦭呆萌恐龙🦭优选工具</h1>
-    <p class="description">优选CloudFlare CDN的IP地址，获取最佳网络体验</p>
+    <h1>🦭 呆萌恐龙优选工具 🦭</h1>
+    <p class="description">全面测试CloudFlare IP，获取最佳网络体验</p>
     
     <!-- 标签页导航 -->
     <div class="tabs">
@@ -692,21 +725,25 @@
         <button id="export-results" class="btn" disabled>导出结果</button>
         <div class="settings">
           <div class="setting-item">
-            <label for="max-latency">延迟阈值(ms):</label>
-            <input type="number" id="max-latency" min="50" max="1000" value="200" placeholder="默认200ms">
+            <label for="max-latency">最大延迟(ms):</label>
+            <input type="number" id="max-latency" min="100" max="1000" value="200" placeholder="默认200ms">
           </div>
-          <div class="setting-item">
-            <label for="max-ip-count">测试IP数量:</label>
-            <input type="number" id="max-ip-count" min="50" max="2000" value="200" placeholder="默认200个">
-          </div>
-          <label class="auto-test-checkbox">
-            <input type="checkbox" id="auto-test">
-            <span>页面加载后自动开始优选</span>
-          </label>
-          <label class="light-mode-checkbox">
-            <input type="checkbox" id="light-mode" checked>
-            <span>轻量模式（减少卡顿）</span>
-          </label>
+        </div>
+      </div>
+      
+      <!-- 添加可隐藏的使用说明区域 -->
+      <div class="help-container">
+        <div class="help-header">
+          <h2>使用说明 <button id="toggle-help" class="btn toggle-btn">隐藏</button></h2>
+        </div>
+        <div id="help-content" class="help-content">
+          <p>本工具用于优选CloudFlare CDN的IP地址，帮助您获取最佳网络体验。</p>
+          <ul>
+            <li>点击"开始优选"按钮开始测试</li>
+            <li>测试完成后，可以按地区、IP类型和端口进行筛选</li>
+            <li>点击"导出结果"按钮可导出筛选后的优质IP列表</li>
+            <li>表格中绿色表示延迟极佳，黄色表示延迟良好，橙色表示延迟一般，红色表示延迟较差</li>
+          </ul>
         </div>
       </div>
       
@@ -1473,6 +1510,26 @@
         
         reader.readAsText(file);
       });
+    });
+  </script>
+  
+  <!-- 添加隐藏/显示使用说明的脚本 -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const toggleHelpBtn = document.getElementById('toggle-help');
+      const helpContent = document.getElementById('help-content');
+      
+      if (toggleHelpBtn && helpContent) {
+        toggleHelpBtn.addEventListener('click', function() {
+          if (helpContent.style.display === 'none') {
+            helpContent.style.display = 'block';
+            toggleHelpBtn.textContent = '隐藏';
+          } else {
+            helpContent.style.display = 'none';
+            toggleHelpBtn.textContent = '显示';
+          }
+        });
+      }
     });
   </script>
 </body>

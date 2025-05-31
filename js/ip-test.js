@@ -3,6 +3,7 @@ const path = require('path');
 const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
+const fetch = require('node-fetch');
 
 // 配置参数
 const CONFIG = {
@@ -14,6 +15,56 @@ const CONFIG = {
   topCount: 50,         // 选取的优质IP数量
   outputFile: 'optimized-ips.txt'  // 输出文件
 };
+
+// 添加IP地理位置查询函数
+async function getIpGeoLocation(ip) {
+  try {
+    // 使用ipapi.co的免费API
+    const response = await fetch(`https://ipapi.co/${ip}/json/`);
+    if (response.ok) {
+      const data = await response.json();
+      
+      // 检查API是否返回错误
+      if (data.error) {
+        console.error(`IP地理位置查询错误: ${data.reason || '未知错误'}`);
+        return null;
+      }
+      
+      return {
+        country: data.country_code?.toLowerCase() || 'unknown',
+        region: data.region_code || '',
+        city: data.city || '',
+        isp: data.org || ''
+      };
+    }
+    
+    console.error(`IP地理位置查询失败: HTTP ${response.status}`);
+    return null;
+  } catch (error) {
+    console.error('IP地理位置查询出错:', error);
+    return null;
+  }
+}
+
+// 简单的IP地理位置缓存
+const geoCache = {};
+
+async function getIpGeoLocationWithCache(ip) {
+  // 检查缓存
+  if (geoCache[ip]) {
+    return geoCache[ip];
+  }
+  
+  // 获取地理位置
+  const geoInfo = await getIpGeoLocation(ip);
+  
+  // 存入缓存
+  if (geoInfo) {
+    geoCache[ip] = geoInfo;
+  }
+  
+  return geoInfo;
+}
 
 // 读取IP列表
 async function readIpList(filePath) {
@@ -32,6 +83,9 @@ async function testIpLatency(ip) {
     // 从CIDR格式提取IP
     const baseIp = ip.split('/')[0];
     
+    // 获取IP地理位置信息
+    const geoInfo = await getIpGeoLocationWithCache(baseIp);
+    
     // 使用ping命令测试延迟
     const pingCount = CONFIG.testCount;
     const pingTimeout = Math.floor(CONFIG.timeout / 1000);
@@ -49,71 +103,46 @@ async function testIpLatency(ip) {
     if (avgMatch && avgMatch[1]) {
       const avgLatency = parseFloat(avgMatch[1]);
       
-      // 检测地理位置 (基于综合延迟估算)
-      let region = 'unknown';
+      // 使用API获取的地理位置
+      const region = geoInfo ? geoInfo.country : 'unknown';
       
-      /* 
-       * 根据延迟综合评估地理位置
-       * 考虑传输延迟、处理延迟、排队延迟和传播延迟的综合因素
-       * 传播延迟公式：L = D/V，其中D为距离，V为光在光纤中的传播速度(约为2*10^8 m/s)
-       * 不同地区的基准参考值(毫秒)：
-       * - 同区域: 20-50ms (主要是处理和排队延迟)
-       * - 相邻国家/地区: 50-100ms (加上一定的传播延迟)
-       * - 跨洲际: 100-300ms (较长传播距离带来的显著传播延迟)
-       */
-      
-      // 亚洲区域 (基于传播距离估算)
-      if (avgLatency < 30) region = 'cn'; // 中国大陆
-      else if (avgLatency < 50) region = 'hk'; // 香港
-      else if (avgLatency < 60) region = 'tw'; // 台湾
-      else if (avgLatency < 70) region = 'jp'; // 日本
-      else if (avgLatency < 80) region = 'kr'; // 韩国
-      else if (avgLatency < 90) region = 'sg'; // 新加坡
-      else if (avgLatency < 100) region = 'my'; // 马来西亚
-      else if (avgLatency < 110) region = 'th'; // 泰国
-      else if (avgLatency < 120) region = 'vn'; // 越南
-      else if (avgLatency < 130) region = 'ph'; // 菲律宾
-      else if (avgLatency < 150) region = 'in'; // 印度
-      // 大洋洲
-      else if (avgLatency < 160) region = 'au'; // 澳大利亚
-      else if (avgLatency < 170) region = 'nz'; // 新西兰
-      // 中东地区
-      else if (avgLatency < 180) region = 'ae'; // 阿联酋
-      // 欧洲区域
-      else if (avgLatency < 190) region = 'ru'; // 俄罗斯
-      else if (avgLatency < 200) region = 'tr'; // 土耳其
-      else if (avgLatency < 210) region = 'uk'; // 英国
-      else if (avgLatency < 220) region = 'fr'; // 法国
-      else if (avgLatency < 230) region = 'de'; // 德国
-      else if (avgLatency < 240) region = 'nl'; // 荷兰
-      else if (avgLatency < 250) region = 'it'; // 意大利
-      else if (avgLatency < 260) region = 'es'; // 西班牙
-      // 北美区域
-      else if (avgLatency < 280) region = 'us'; // 美国
-      else if (avgLatency < 290) region = 'ca'; // 加拿大
-      else if (avgLatency < 300) region = 'mx'; // 墨西哥
-      // 南美洲
-      else if (avgLatency < 320) region = 'br'; // 巴西
-      else if (avgLatency < 330) region = 'ar'; // 阿根廷
-      else if (avgLatency < 340) region = 'cl'; // 智利
-      // 非洲
-      else if (avgLatency < 350) region = 'za'; // 南非
-      else if (avgLatency < 360) region = 'eg'; // 埃及
-      else if (avgLatency < 370) region = 'ng'; // 尼日利亚
-      else region = 'unknown'; // 未知区域
+      console.log(`IP ${baseIp} 测试成功，延迟: ${avgLatency.toFixed(2)}ms，区域: ${region}` +
+                (geoInfo?.city ? `，城市: ${geoInfo.city}` : '') +
+                (geoInfo?.isp ? `，ISP: ${geoInfo.isp}` : ''));
       
       return {
         ip: ip,
         latency: avgLatency,
         region: region,
+        country: geoInfo?.country || 'unknown',
+        city: geoInfo?.city || '',
+        isp: geoInfo?.isp || '',
         isIpv6: isIpv6,
         status: 'success'
       };
     }
     
-    return { ip: ip, latency: 9999, region: 'unknown', isIpv6: isIpv6, status: 'parse_failed' };
+    console.log(`IP ${baseIp} ping测试失败，无法解析结果`);
+    return { 
+      ip: ip, 
+      latency: 9999, 
+      region: geoInfo?.country || 'unknown', 
+      isIpv6: isIpv6, 
+      status: 'parse_failed' 
+    };
   } catch (error) {
-    return { ip: ip, latency: 9999, region: 'unknown', isIpv6: baseIp.includes(':'), status: 'timeout' };
+    // 如果有地理位置信息但ping失败
+    const baseIp = ip.split('/')[0];
+    const geoInfo = await getIpGeoLocationWithCache(baseIp);
+    
+    console.log(`IP ${baseIp} ping测试超时，地区: ${geoInfo?.country || 'unknown'}`);
+    return { 
+      ip: ip, 
+      latency: 9999, 
+      region: geoInfo?.country || 'unknown', 
+      isIpv6: baseIp.includes(':'), 
+      status: 'timeout' 
+    };
   }
 }
 
@@ -162,6 +191,13 @@ function generateOptimizedList(groupedResults) {
   const perRegionCount = Math.floor(CONFIG.topCount / regions.length);
   let optimizedList = [];
   
+  // 添加文件头信息
+  optimizedList.push(`# CloudFlare IP优选结果`);
+  optimizedList.push(`# 优选时间: ${new Date().toLocaleString()}`);
+  optimizedList.push(`# 使用IP地理位置API进行精确定位`);
+  optimizedList.push(`# 每个国家/地区选取 ${CONFIG.topCount} 个最优IP`);
+  optimizedList.push('');
+  
   // 从每个区域选取最佳IP
   regions.forEach(region => {
     const regionIps = groupedResults[region]
@@ -173,12 +209,22 @@ function generateOptimizedList(groupedResults) {
       regionIps.forEach(result => {
         // 从CIDR格式提取IP
         const baseIp = result.ip.split('/')[0];
+        // 添加城市和ISP信息
+        const cityInfo = result.city ? ` (${result.city})` : '';
+        const ispInfo = result.isp ? ` - ${result.isp}` : '';
         // 添加端口号（默认为443，因为Cloudflare通常使用HTTPS）
-        optimizedList.push(`${baseIp}:443#${region} # 延迟: ${result.latency.toFixed(2)}ms`);
+        optimizedList.push(`${baseIp}:443#${region}${cityInfo} # 延迟: ${result.latency.toFixed(2)}ms${ispInfo}`);
       });
       optimizedList.push('');  // 添加空行分隔
     }
   });
+  
+  // 添加使用说明
+  optimizedList.push(`# 使用说明`);
+  optimizedList.push(`# 1. 这些IP是通过延迟测试优选出来的，可用于CloudFlare CDN加速`);
+  optimizedList.push(`# 2. 格式为: IP:端口#国家或地区`);
+  optimizedList.push(`# 3. 地理位置信息由API提供，比延迟估算更准确`);
+  optimizedList.push(`# 4. 建议定期重新优选，以获取最佳体验`);
   
   return optimizedList.join('\n');
 }
